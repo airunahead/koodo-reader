@@ -2,7 +2,7 @@ import React from "react";
 import SettingPanel from "../../containers/panels/settingPanel";
 import NavigationPanel from "../../containers/panels/navigationPanel";
 import OperationPanel from "../../containers/panels/operationPanel";
-import { Toaster } from "react-hot-toast";
+import { Toaster, toast } from "react-hot-toast";
 import ProgressPanel from "../../containers/panels/progressPanel";
 import { ReaderProps, ReaderState } from "./interface";
 import {
@@ -27,7 +27,8 @@ import {
 } from "../../utils/reader/discordRPC";
 import SupportDialog from "../../components/dialogs/supportDialog";
 import { READING_PANEL_TOGGLE_EVENT } from "../../utils/reader/mouseEvent";
-import { isReadingRawPDF, throttle } from "../../utils/common";
+import { isPaginatedBook, isReadingRawPDF, throttle } from "../../utils/common";
+import { pageWidthPresetList } from "../../constants/dropdownList";
 declare var window: any;
 let lock = false; //prevent from clicking too fasts
 let throttleTime = 200;
@@ -191,10 +192,9 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
       if (!book) return;
 
       this.props.handleFetchPercentage(book);
-      let readerMode =
-        isReadingRawPDF(book) || book.format.startsWith("CB")
-          ? ConfigService.getReaderConfig("pdfReaderMode") || "scroll"
-          : ConfigService.getReaderConfig("readerMode") || "double";
+      let readerMode = isPaginatedBook(book)
+        ? ConfigService.getReaderConfig("pdfReaderMode") || "scroll"
+        : ConfigService.getReaderConfig("readerMode") || "double";
       this.props.handleReaderMode(readerMode);
       this.props.handleReadingBook(book);
       // Start event-driven reading-time tracking
@@ -379,7 +379,15 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
           onClick={async () => {
             if (lock) return;
             lock = true;
-            await this.props.htmlBook.rendition.prev();
+            // RTL 下左侧箭头翻到下一页
+            if (
+              ConfigService.getReaderConfig("revertDirection") === "yes" &&
+              ConfigService.getReaderConfig("textOrientation") !== "vertical"
+            ) {
+              await this.props.htmlBook.rendition.next();
+            } else {
+              await this.props.htmlBook.rendition.prev();
+            }
             this.handleLocation();
             setTimeout(() => (lock = false), throttleTime);
           }}
@@ -415,7 +423,15 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
             onClick={async () => {
               if (lock) return;
               lock = true;
-              await this.props.htmlBook.rendition.next();
+              // RTL 下右侧箭头翻到上一页
+              if (
+                ConfigService.getReaderConfig("revertDirection") === "yes" &&
+                ConfigService.getReaderConfig("textOrientation") !== "vertical"
+              ) {
+                await this.props.htmlBook.rendition.prev();
+              } else {
+                await this.props.htmlBook.rendition.next();
+              }
               this.handleLocation();
               setTimeout(() => (lock = false), throttleTime);
             }}
@@ -489,9 +505,9 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
         <div
           style={{
             position: "absolute",
-            top: "0px",
+            top: "10px",
             right:
-              this.props.isSettingLocked || this.props.isDockedRight ? 300 : 5,
+              this.props.isSettingLocked || this.props.isDockedRight ? 300 : 15,
             zIndex: 10,
             width: "120px",
             display: "flex",
@@ -590,6 +606,81 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
                       width: "120px",
                     }}
                   />
+
+                  <select
+                    name=""
+                    className="general-setting-dropdown scale-preset-dropdown"
+                    value={
+                      pageWidthPresetList.some(
+                        (opt) => opt.value === this.state.scale
+                      )
+                        ? this.state.scale
+                        : ""
+                    }
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      if (!value) return;
+                      ConfigService.setReaderConfig("scale", value);
+                      this.setState({ scale: value });
+                      this.props.handleScale(value);
+                      this.props.renderBookFunc();
+                    }}
+                    style={{ zIndex: 100 }}
+                  >
+                    <option value="" hidden></option>
+                    {pageWidthPresetList.map((opt) => (
+                      <option
+                        key={opt.value}
+                        value={opt.value}
+                        className="general-setting-option"
+                      >
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+
+                  <div
+                    className={
+                      "scale-fit-switch-container" +
+                      (this.props.isFitPage ? " active" : "")
+                    }
+                    onClick={() => {
+                      const next = !this.props.isFitPage;
+                      ConfigService.setReaderConfig(
+                        "isFitPage",
+                        next ? "yes" : "no"
+                      );
+                      this.props.handleFitPage(next);
+                      toast(this.props.t("Change successful"));
+                      setTimeout(() => {
+                        this.props.renderBookFunc();
+                      }, 300);
+                    }}
+                    style={{ zIndex: 100 }}
+                  >
+                    <span className="scale-fit-switch-title">
+                      {this.props.t("Fit to page")}
+                    </span>
+                    <span
+                      className="single-control-switch"
+                      style={this.props.isFitPage ? {} : { opacity: 0.6 }}
+                    >
+                      <span
+                        className="single-control-button"
+                        style={
+                          !this.props.isFitPage
+                            ? {
+                                transform: "translateX(0px)",
+                                transition: "transform 0.5s ease",
+                              }
+                            : {
+                                transform: "translateX(20px)",
+                                transition: "transform 0.5s ease",
+                              }
+                        }
+                      ></span>
+                    </span>
+                  </div>
                 </div>
               )}
               <div
@@ -632,7 +723,8 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
             </div>
           )}
           <div
-            className="reader-setting-icon-container"
+            className="next-chapter-single-container"
+            style={{ transform: "rotate(0deg)", marginLeft: "8px" }}
             onClick={() => {
               this.handleEnterReader("left");
               this.handleEnterReader("right");
@@ -640,10 +732,7 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
               this.handleEnterReader("top");
             }}
           >
-            <span
-              className="icon-grid reader-setting-icon"
-              style={{ opacity: 1 }}
-            ></span>
+            <span className="icon-grid next-chapter-single"></span>
           </div>
         </div>
         {this.props.isSettingOpen && (
