@@ -29,7 +29,10 @@ const initState = {
   section: null,
   readerMode: "double",
   isConvertOpen: false,
+  isScaleOpen: false,
   isPdfCropOpen: false,
+  isStudyLangOpen: false,
+  isAssistReadOpen: false,
   isSpeechOpen: false,
   isAnnotationOpen: false,
   speechStartText: "",
@@ -82,10 +85,25 @@ export function reader(
         ...state,
         isConvertOpen: action.payload,
       };
+    case "HANDLE_SCALE_PAGE_DIALOG":
+      return {
+        ...state,
+        isScaleOpen: action.payload,
+      };
     case "HANDLE_PDF_CROP_DIALOG":
       return {
         ...state,
         isPdfCropOpen: action.payload,
+      };
+    case "HANDLE_STUDY_LANG_DIALOG":
+      return {
+        ...state,
+        isStudyLangOpen: action.payload,
+      };
+    case "HANDLE_ASSIST_READ_DIALOG":
+      return {
+        ...state,
+        isAssistReadOpen: action.payload,
       };
     case "HANDLE_SPEECH_DIALOG":
       return {

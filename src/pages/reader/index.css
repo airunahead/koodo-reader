@@ -219,38 +219,11 @@
   width: 50px;
   padding: 15px;
 }
-.scale-container {
-  min-width: 200px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-}
-.scale-preset-dropdown.general-setting-dropdown {
-  position: static;
-  width: 76px;
-  height: 28px;
-  margin-left: 8px;
-  margin-right: 5px;
-  font-size: 13px;
-}
-.scale-fit-switch-container {
-  display: flex;
-  align-items: center;
-  margin-left: 10px;
-  margin-right: 4px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.scale-fit-switch-title {
-  font-size: 13px;
-  margin-right: 6px;
-}
 .text-to-speech-icon {
   font-size: 22px;
   margin-right: 10px;
 }
-.reader-setting-icon-container,
-.reader-zoom-in-icon-container {
+.reader-setting-icon-container {
   width: 50px;
   height: 50px;
   font-size: 20px;
@@ -264,10 +237,34 @@
   transition: 0, 2s;
   float: right;
 }
-.reader-setting-icon-container:hover,
-.reader-zoom-in-icon-container:hover {
+.reader-setting-icon-container:hover {
   border-radius: 50%;
 }
-.reader-zoom-in-icon-container {
-  font-size: 23px;
+.reader-setting-dialog-anchor {
+  position: absolute;
+  top: 50px;
+  z-index: 5;
+  left: clamp(
+    8px,
+    calc(var(--reader-dialog-anchor-x, 50%) - var(--reader-dialog-width, 280px) / 2),
+    calc(100% - var(--reader-dialog-width, 280px) - 8px)
+  );
+  transition: left 0.2s ease;
+  animation: reader-setting-dialog-appear 0.12s ease-out;
+}
+.reader-setting-dialog-anchor .sort-dialog-container {
+  position: static;
+  animation: none;
+  box-sizing: border-box;
+  max-width: calc(100vw - 16px);
+}
+@keyframes reader-setting-dialog-appear {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
