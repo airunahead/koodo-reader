@@ -29,6 +29,7 @@ import {
   clearDiscordPresence,
 } from "../../utils/reader/discordRPC";
 import SupportDialog from "../../components/dialogs/supportDialog";
+import WindowControls from "../../components/windowControls";
 import { READING_PANEL_TOGGLE_EVENT } from "../../utils/reader/mouseEvent";
 import { isPaginatedBook, isReadingRawPDF, throttle } from "../../utils/common";
 declare var window: any;
@@ -73,6 +74,7 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
   messageTimer!: NodeJS.Timeout;
   tickTimer!: NodeJS.Timeout;
   private autoShowTimer: NodeJS.Timeout | null = null;
+  private hideQuickButtonsTimer: NodeJS.Timeout | null = null;
   private dialogAnchorIcon: HTMLElement | null = null;
   private readingTimeUtil = new ReadingTimeUtil(
     ConfigService,
@@ -221,6 +223,10 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
       this.handleReadingPanelToggle
     );
     window.removeEventListener("resize", this.updateSettingDialogPosition);
+    if (this.hideQuickButtonsTimer) {
+      clearTimeout(this.hideQuickButtonsTimer);
+      this.hideQuickButtonsTimer = null;
+    }
     if (isElectron) {
       clearDiscordPresence();
     }
@@ -416,6 +422,28 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
       }, 200);
     },
   });
+  showQuickButtons = () => {
+    if (this.autoShowTimer) {
+      clearTimeout(this.autoShowTimer);
+      this.autoShowTimer = null;
+    }
+    if (this.hideQuickButtonsTimer) {
+      clearTimeout(this.hideQuickButtonsTimer);
+      this.hideQuickButtonsTimer = null;
+    }
+    if (!this.state.isNearEdge) {
+      this.setState({ isNearEdge: true });
+    }
+  };
+  hideQuickButtons = () => {
+    if (this.hideQuickButtonsTimer) {
+      clearTimeout(this.hideQuickButtonsTimer);
+    }
+    this.hideQuickButtonsTimer = setTimeout(() => {
+      this.hideQuickButtonsTimer = null;
+      this.setState({ isNearEdge: false });
+    }, 200);
+  };
   handleLocation = () => {
     let position = this.props.htmlBook.rendition.getPosition();
 
@@ -426,6 +454,13 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
     );
   };
   render() {
+    const isSeparateElectronWindow =
+      isElectron && ConfigService.getReaderConfig("isOpenInMain") !== "yes";
+    const isMacOS =
+      isElectron && window.electronAPI?.runtime?.platform === "darwin";
+    const isMergeWord = ConfigService.getReaderConfig("isMergeWord") === "yes";
+    const showCustomWindowControls =
+      isSeparateElectronWindow && (!isMacOS || isMergeWord);
     const renditionProps = {
       handleLeaveReader: this.handleLeaveReader,
       handleEnterReader: this.handleEnterReader,
@@ -438,9 +473,14 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
     return (
       <div className="viewer">
         <Tooltip id="my-tooltip" style={{ zIndex: 25 }} />
+        {isSeparateElectronWindow && (
+          <div className="reader-window-drag-region" />
+        )}
 
         <div
-          className="previous-chapter-single-container"
+          className="previous-chapter-single-container reader-quick-buttons"
+          onMouseEnter={this.showQuickButtons}
+          onMouseLeave={this.hideQuickButtons}
           onClick={async () => {
             if (lock) return;
             lock = true;
@@ -461,12 +501,13 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
             opacity: this.state.isNearEdge ? undefined : 0,
             transition: "opacity 0.3s ease",
           }}
-          onMouseEnter={() => this.setState({ isNearEdge: true })}
-          onMouseLeave={() => this.setState({ isNearEdge: false })}
         >
           <span className="icon-dropdown previous-chapter-single"></span>
         </div>
         <div
+          className="reader-quick-buttons"
+          onMouseEnter={this.showQuickButtons}
+          onMouseLeave={this.hideQuickButtons}
           style={{
             position: "absolute",
             bottom: 10,
@@ -480,8 +521,6 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
             opacity: this.state.isNearEdge ? 1 : 0,
             transition: "opacity 0.3s ease",
           }}
-          onMouseEnter={() => this.setState({ isNearEdge: true })}
-          onMouseLeave={() => this.setState({ isNearEdge: false })}
         >
           <div
             className="next-chapter-single-container"
@@ -568,15 +607,29 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
         </div>
 
         <div
+          className="reader-quick-buttons"
+          onMouseEnter={this.showQuickButtons}
+          onMouseLeave={this.hideQuickButtons}
           style={{
             position: "absolute",
             top: "0px",
-            right:
-              this.props.isSettingLocked || this.props.isDockedRight ? 300 : 15,
-            zIndex: 10,
+            ...(isSeparateElectronWindow && isMacOS
+              ? {
+                  left: this.props.isNavLocked ? 315 : isMergeWord ? 15 : 82,
+                  right: "auto",
+                }
+              : {
+                  right:
+                    this.props.isSettingLocked || this.props.isDockedRight
+                      ? 300
+                      : 15,
+                }),
+            zIndex: 14,
             width: "max-content",
             display: "flex",
-            alignItems: "center",
+            flexDirection: "column",
+            alignItems:
+              isSeparateElectronWindow && isMacOS ? "flex-start" : "flex-end",
             justifyContent: "flex-end",
             opacity: this.state.isNearEdge ? 1 : 0,
             transition: "opacity 0.3s ease",
@@ -584,103 +637,115 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
               ? ConfigService.getReaderConfig("textColor")
               : "",
           }}
-          onMouseEnter={() => this.setState({ isNearEdge: true })}
-          onMouseLeave={() => this.setState({ isNearEdge: false })}
         >
-          {this.props.currentBook &&
-            !isReadingRawPDF(this.props.currentBook) && (
-              <>
-                <div
-                  className="reader-setting-icon-container"
-                  {...this.handleDialogButtonHover(
-                    this.props.handleStudyLangDialog,
-                    ".study-lang-dialog-container"
-                  )}
-                >
-                  <span
-                    className="icon-trans reader-setting-icon"
-                    style={{ fontSize: 23 }}
-                  ></span>
-                </div>
-                <div
-                  className="reader-setting-icon-container"
-                  {...this.handleDialogButtonHover(
-                    this.props.handleAssistReadDialog,
-                    ".assist-read-dialog-container"
-                  )}
-                >
-                  <span
-                    className="icon-pencil-ruler reader-setting-icon"
-                    style={{ fontSize: 23 }}
-                  ></span>
-                </div>
-              </>
-            )}
-          {(this.props.readerMode === "scroll" ||
-            this.props.readerMode === "single") && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "flex-end",
-              }}
-            >
-              <div
-                className="reader-setting-icon-container"
-                {...this.handleDialogButtonHover(
-                  this.props.handleScalePageDialog,
-                  ".scale-page-dialog-container"
-                )}
-              >
-                <span
-                  className="icon-zoom-in reader-setting-icon"
-                  style={{ fontSize: 23 }}
-                ></span>
-              </div>
-            </div>
-          )}
-
-          {this.props.currentBook.format === "PDF" &&
-            this.props.readerMode === "scroll" && (
-              <div
-                className="reader-setting-icon-container"
-                {...this.handleDialogButtonHover(
-                  this.props.handlePdfCropDialog,
-                  ".pdf-crop-dialog-container"
-                )}
-              >
-                <span
-                  className="icon-crop reader-setting-icon"
-                  style={{ fontSize: 24 }}
-                ></span>
-              </div>
-            )}
-
-          {this.props.currentBook.format === "PDF" && (
-            <div
-              className="reader-setting-icon-container"
-              {...this.handleDialogButtonHover(
-                this.props.handleConvertDialog,
-                ".convert-dialog-container"
-              )}
-            >
-              <span
-                className="icon-convert-text reader-setting-icon"
-                style={{ fontSize: 26 }}
-              ></span>
-            </div>
-          )}
           <div
-            className="next-chapter-single-container"
-            style={{ transform: "rotate(0deg)", marginLeft: "8px" }}
-            onClick={() => {
-              this.handleEnterReader("left");
-              this.handleEnterReader("right");
-              this.handleEnterReader("bottom");
-              this.handleEnterReader("top");
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "flex-end",
             }}
           >
-            <span className="icon-grid next-chapter-single"></span>
+            {this.props.currentBook &&
+              !isReadingRawPDF(this.props.currentBook) && (
+                <>
+                  <div
+                    className="reader-setting-icon-container"
+                    {...this.handleDialogButtonHover(
+                      this.props.handleStudyLangDialog,
+                      ".study-lang-dialog-container"
+                    )}
+                  >
+                    <span
+                      className="icon-trans reader-setting-icon"
+                      style={{ fontSize: 23 }}
+                    ></span>
+                  </div>
+                  <div
+                    className="reader-setting-icon-container"
+                    {...this.handleDialogButtonHover(
+                      this.props.handleAssistReadDialog,
+                      ".assist-read-dialog-container"
+                    )}
+                  >
+                    <span
+                      className="icon-pencil-ruler reader-setting-icon"
+                      style={{ fontSize: 21 }}
+                    ></span>
+                  </div>
+                </>
+              )}
+            {(this.props.readerMode === "scroll" ||
+              this.props.readerMode === "single") && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "flex-end",
+                }}
+              >
+                <div
+                  className="reader-setting-icon-container"
+                  {...this.handleDialogButtonHover(
+                    this.props.handleScalePageDialog,
+                    ".scale-page-dialog-container"
+                  )}
+                >
+                  <span
+                    className="icon-zoom-in reader-setting-icon"
+                    style={{ fontSize: 23 }}
+                  ></span>
+                </div>
+              </div>
+            )}
+
+            {this.props.currentBook.format === "PDF" &&
+              this.props.readerMode === "scroll" && (
+                <div
+                  className="reader-setting-icon-container"
+                  {...this.handleDialogButtonHover(
+                    this.props.handlePdfCropDialog,
+                    ".pdf-crop-dialog-container"
+                  )}
+                >
+                  <span
+                    className="icon-crop reader-setting-icon"
+                    style={{ fontSize: 24 }}
+                  ></span>
+                </div>
+              )}
+
+            {this.props.currentBook.format === "PDF" && (
+              <div
+                className="reader-setting-icon-container"
+                {...this.handleDialogButtonHover(
+                  this.props.handleConvertDialog,
+                  ".convert-dialog-container"
+                )}
+              >
+                <span
+                  className="icon-convert-text reader-setting-icon"
+                  style={{ fontSize: 26 }}
+                ></span>
+              </div>
+            )}
+            <div
+              className="reader-setting-icon-container"
+              aria-label={this.props.t("Toggle menu")}
+              data-tooltip-id="my-tooltip"
+              data-tooltip-content={this.props.t("Toggle menu")}
+              onClick={() => {
+                this.handleEnterReader("left");
+                this.handleEnterReader("right");
+                this.handleEnterReader("bottom");
+                this.handleEnterReader("top");
+              }}
+            >
+              <span
+                className="icon-grid reader-setting-icon"
+                style={{ fontSize: 20 }}
+              ></span>
+            </div>
+            {showCustomWindowControls && <WindowControls t={this.props.t} />}
           </div>
         </div>
         {this.props.isSettingOpen && (

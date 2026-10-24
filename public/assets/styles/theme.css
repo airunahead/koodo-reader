@@ -273,6 +273,14 @@ a {
   background: var(--tab-active-bg);
 }
 
+.setting-panel-tabs {
+  border: 1.5px solid currentColor;
+}
+
+.setting-panel-tabs-indicator {
+  background-color: currentColor;
+}
+
 .book-item-image,
 .book-item-cover,
 .book-cover,

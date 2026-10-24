@@ -182,6 +182,9 @@ class DropdownList extends React.Component<
     const renderParagraphCharacter = () => {
       return dropdownList
         .filter((item) => {
+          if (this.props.group && item.group !== this.props.group) {
+            return false;
+          }
           if (item.value === "fullTranslationMode") {
             return false;
           }
@@ -261,7 +264,7 @@ class DropdownList extends React.Component<
     return (
       <ul className="paragraph-character-setting">
         {renderParagraphCharacter()}
-        {isTxt && (
+        {isTxt && this.props.group === "more" && (
           <li className="paragraph-character-container">
             <p className="general-setting-title">
               <Trans>TXT parser</Trans>
