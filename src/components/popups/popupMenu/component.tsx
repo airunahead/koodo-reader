@@ -37,9 +37,7 @@ class PopupMenu extends React.Component<PopupMenuProps, PopupMenuStates> {
     this.highlighter = null;
     this.mode = "";
     this.state = {
-      deleteKey: "",
       rect: this.props.rect,
-      isRightEdge: false,
     };
   }
   UNSAFE_componentWillReceiveProps(nextProps: PopupMenuProps) {
@@ -55,18 +53,13 @@ class PopupMenu extends React.Component<PopupMenuProps, PopupMenuStates> {
     }
   }
 
-  handleShowDelete = (deleteKey: string) => {
-    this.setState({ deleteKey });
-  };
   showMenu = () => {
     let rect = this.state.rect;
     if (!rect) return;
-    this.setState({ isRightEdge: false }, () => {
-      let { posX, posY } = this.getHtmlPosition(rect);
-      this.props.handleOpenMenu(true);
-      let popupMenu = document.querySelector(".popup-menu-container");
-      popupMenu?.setAttribute("style", `left:${posX}px;top:${posY}px`);
-    });
+    let { posX, posY } = this.getHtmlPosition(rect);
+    this.props.handleOpenMenu(true);
+    let popupMenu = document.querySelector(".popup-menu-container");
+    popupMenu?.setAttribute("style", `left:${posX}px;top:${posY}px`);
   };
   getHtmlPosition(rect: any) {
     let pageSize = this.props.rendition.getPageSize(this.props.chapterDocIndex);
@@ -134,8 +127,7 @@ class PopupMenu extends React.Component<PopupMenuProps, PopupMenuStates> {
   }
 
   openMenu = () => {
-    this.setState({ deleteKey: "" });
-    let docs = getIframeDoc(this.props.currentBook.format);
+    let docs = getIframeDoc(this.props.currentBook);
     let sel: Selection | null = null;
     for (let i = 0; i < docs.length; i++) {
       let doc = docs[i];
@@ -199,9 +191,8 @@ class PopupMenu extends React.Component<PopupMenuProps, PopupMenuStates> {
     });
   };
 
-  handleSelectAction = async (action: string, sel: Selection) => {
-    const format = this.props.currentBook.format;
-    const text = getSelection(format);
+  handleSelectAction = async (action: string, _sel: Selection) => {
+    const text = getSelection(this.props.currentBook);
     if (!text) return;
     // PPTX/XPS/OXPS/DjVu/OFD 不支持笔记和高亮，回退到默认菜单
     if (
@@ -221,7 +212,9 @@ class PopupMenu extends React.Component<PopupMenuProps, PopupMenuStates> {
         break;
       case "dict":
         this.props.handleOriginalText(text);
-        this.props.handleOriginalSentence(getSelectionSentence(format));
+        this.props.handleOriginalSentence(
+          getSelectionSentence(this.props.currentBook)
+        );
         this.props.handleMenuMode("dict");
         this.props.handleOpenMenu(true);
         break;

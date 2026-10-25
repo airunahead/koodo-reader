@@ -11,7 +11,6 @@ import Book from "../models/Book";
 import BookUtil from "./file/bookUtil";
 import * as Kookit from "../assets/lib/kookit.min";
 import DatabaseService from "./storage/databaseService";
-import packageJson from "../../package.json";
 import toast from "react-hot-toast";
 import i18n from "../i18n";
 import {
@@ -35,6 +34,7 @@ import {
   ocrTesseractLangList,
 } from "../constants/dropdownList";
 import TokenService from "./storage/tokenService";
+import { getBuiltinPluginDefinition } from "./plugins/catalog";
 declare var window: any;
 export const supportedFormats = [
   ".epub",
@@ -571,15 +571,6 @@ export const handleExitFullScreen = () => {
     }
   }
 };
-export const getQueryParams = (url: string) => {
-  const urlObj = new URL(url);
-  const params = new URLSearchParams(urlObj.search);
-  const queryParams = {};
-  for (let pair of params.entries()) {
-    queryParams[pair[0]] = pair[1];
-  }
-  return queryParams;
-};
 export const getStorageLocation = () => {
   if (isElectron) {
     return ConfigService.getItem("storageLocation")
@@ -731,7 +722,7 @@ export function removeSearchParams() {
 export const preCacheAllBooks = async (bookList: Book[]) => {
   for (let index = 0; index < bookList.length; index++) {
     const selectedBook = bookList[index];
-    if (selectedBook.format === "PDF") {
+    if (selectedBook.format === "PDF" || isFixedLayoutBook(selectedBook)) {
       continue;
     }
     if (
@@ -992,6 +983,12 @@ export const formatTimestamp = (timestamp) => {
   // return date.toLocaleDateString() + " " + date.toLocaleTimeString();
   return date.toLocaleDateString();
 };
+export const formatDateToDay = (value?: string): string => {
+  if (!value) return "";
+  const match = String(value).match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (!match) return String(value);
+  return `${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`;
+};
 export const checkMissingBook = async () => {
   if (!isElectron) return;
   var fs = window.electronAPI.fs;
@@ -1013,30 +1010,6 @@ export const checkMissingBook = async () => {
     if (book.path && fs.existsSync(book.path)) {
       fs.copyFileSync(book.path, expectedPath);
     }
-  }
-};
-export const deleteBrokenCovers = () => {
-  try {
-    if (!isElectron) return;
-    var fs = window.electronAPI.fs;
-    var path = window.electronAPI.path;
-    const storageLocation = getStorageLocation();
-    if (!storageLocation) return;
-    const dirPath = path.join(storageLocation, "cover");
-    const files = fs.readdirSync(dirPath);
-    for (const file of files) {
-      const filePath = path.join(dirPath, file);
-      try {
-        const stat = fs.statSync(filePath);
-        if (stat.size === 0) {
-          fs.unlinkSync(filePath);
-        }
-      } catch (e) {
-        console.error("Failed to check/delete file:", filePath, e);
-      }
-    }
-  } catch (error) {
-    console.error("Error while deleting broken books and covers:", error);
   }
 };
 export const checkBrokenDatabase = async () => {
@@ -1256,7 +1229,7 @@ export const showDownloadProgress = (
   return timer;
 };
 export const showTaskProgress = async (
-  handleSyncStateChange: (isSync: boolean) => void
+  _handleSyncStateChange: (isSync: boolean) => void
 ) => {
   let config = {};
   let timer: any;
@@ -1710,12 +1683,10 @@ export const findLastMatchIndex = (a: string[], b: string[]) => {
 
   for (let i = 0; i < b.length; i++) {
     // 从当前 aIndex 开始在 a 中查找 b[i]
-    let found = false;
     for (let j = aIndex; j < a.length; j++) {
       if (a[j].trim() === b[i].trim()) {
         lastMatchIndex = j;
         aIndex = j + 1;
-        found = true;
         break;
       }
     }
@@ -2029,6 +2000,25 @@ export const getDefaultOcrEngine = (currentBook: any) => {
   }
 };
 export const getOcrLangList = (engine: string) => {
+  const pluginDefinition = getBuiltinPluginDefinition(engine);
+  if (pluginDefinition?.type === "ocr") {
+    if (!pluginDefinition.defaultConfig.language) {
+      return [];
+    }
+    const langList = pluginDefinition.langList;
+    if (Array.isArray(langList)) {
+      return langList.map((item) => ({
+        label: item.nativeLang || item.lang,
+        value: item.code,
+        lang: item.code,
+      }));
+    }
+    return Object.entries(langList).map(([value, label]) => ({
+      label: String(label),
+      value,
+      lang: value,
+    }));
+  }
   let list: any[];
   if (engine === "tesseract") {
     list = ocrTesseractLangList;
@@ -2059,6 +2049,22 @@ export const getOcrLangList = (engine: string) => {
   return list;
 };
 export const getDefaultOcrLang = (engine: string, currentBook: any) => {
+  const pluginDefinition = getBuiltinPluginDefinition(engine);
+  if (pluginDefinition?.type === "ocr") {
+    const pluginLangList = getOcrLangList(engine);
+    if (pluginLangList.length === 0) {
+      return "";
+    }
+    const lang = ConfigService.getReaderConfig(
+      currentBook.description.indexOf("scanned") > -1
+        ? "scannedOcrLang"
+        : "textOcrLang"
+    );
+    if (lang && pluginLangList.some((item) => item.value === lang)) {
+      return lang;
+    }
+    return "";
+  }
   const lang = ConfigService.getReaderConfig(
     currentBook.description.indexOf("scanned") > -1
       ? "scannedOcrLang"
@@ -2332,10 +2338,40 @@ export const getOcrCachePath = (
   }
   return electron.path.join(ocrDir, bookKey + "_" + chapterDocIndex + ".json");
 };
+export const clearOcrCache = (bookKey: string) => {
+  if (!isElectron || !window.electronAPI || !window.electronAPI.fs) {
+    return;
+  }
+  try {
+    const electron = window.electronAPI;
+    const dirPath = electron.sendSync("user-data", "ping");
+    const ocrDir = electron.path.join(dirPath, "ocr");
+    if (!electron.fs.existsSync(ocrDir)) {
+      return;
+    }
+    const files = electron.fs.readdirSync(ocrDir);
+    files.forEach((fileName: string) => {
+      if (fileName.startsWith(bookKey + "_")) {
+        electron.fs.unlinkSync(electron.path.join(ocrDir, fileName));
+      }
+    });
+  } catch (error) {
+    console.error("Failed to clear ocr cache:", error);
+  }
+};
 export const isReadingRawPDF = (book: Book) => {
   return (
     book.format === "PDF" &&
     !ConfigService.getAllListConfig("convertPDFBooks").includes(book.key)
+  );
+};
+export const isFixedLayoutComic = (book: Book) => {
+  return (
+    (book.format === "EPUB" ||
+      book.format === "MOBI" ||
+      book.format === "AZW3" ||
+      book.format === "AZW") &&
+    book.layout === "pre-paginated"
   );
 };
 // PDF（原始版式）、漫画（CB 系列）、PPTX/PPT、XPS、OXPS、DjVu、OFD 共用多 iframe 分页结构
@@ -2349,7 +2385,8 @@ export const isPaginatedBook = (book: Book) => {
     book.format === "OXPS" ||
     book.format === "DJVU" ||
     book.format === "DJV" ||
-    book.format === "OFD"
+    book.format === "OFD" ||
+    isFixedLayoutComic(book)
   );
 };
 // PPTX/PPT/XPS/OXPS/DjVu/OFD 复用漫画结构渲染，暂不支持笔记和高亮
@@ -2361,7 +2398,8 @@ export const isFixedLayoutBook = (book: Book) => {
     book.format === "OXPS" ||
     book.format === "DJVU" ||
     book.format === "DJV" ||
-    book.format === "OFD"
+    book.format === "OFD" ||
+    isFixedLayoutComic(book)
   );
 };
 export const getOcrCache = (bookKey: string, chapterDocIndex: string) => {

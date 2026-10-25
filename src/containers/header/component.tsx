@@ -14,7 +14,6 @@ import { generateSnapshot } from "../../utils/file/backup";
 import { isElectron } from "react-device-detect";
 import {
   getCloudConfig,
-  removeCloudConfig,
   upgradeConfig,
   upgradeStorage,
 } from "../../utils/file/common";
@@ -36,7 +35,6 @@ import {
   openInBrowser,
   scanFolderForNewBooks,
   showTaskProgress,
-  throttle,
   vexComfirmAsync,
   AUTO_IMPORT_FOLDERS_KEY,
 } from "../../utils/common";
@@ -57,16 +55,11 @@ class Header extends React.Component<HeaderProps, HeaderState> {
   scheduledSyncTimer: any;
   private isSyncing: boolean = false;
   private hasRunAutoImport: boolean = false;
-  private resizeHandler: (() => void) | null = null;
   private readingFinishedHandler: ((config: any) => void) | null = null;
   constructor(props: HeaderProps) {
     super(props);
 
     this.state = {
-      isOnlyLocal: false,
-      language: ConfigService.getReaderConfig("lang"),
-      isNewVersion: false,
-      width: document.body.clientWidth,
       isHidePro: false,
       isSync: false,
       notificationCount: 0,
@@ -113,9 +106,9 @@ class Header extends React.Component<HeaderProps, HeaderState> {
         console.error("upgrade failed");
       }
 
-      this.readingFinishedHandler = async (config: any) => {
-        this.handleFinishReading();
-      };
+    this.readingFinishedHandler = async () => {
+      this.handleFinishReading();
+    };
       ipcRenderer.on("reading-finished", this.readingFinishedHandler);
       ipcRenderer.on("open-book-from-link", async (config: any) => {
         const book = await DatabaseService.getRecord(config.bookKey, "books");
@@ -171,12 +164,8 @@ class Header extends React.Component<HeaderProps, HeaderState> {
         this.props.handleLocalFileDialog(true);
       }
     }
-    this.resizeHandler = throttle(() => {
-      this.setState({ width: document.body.clientWidth });
-    });
-    window.addEventListener("resize", this.resizeHandler);
     this.props.handleCloudSyncFunc(this.handleCloudSync);
-    document.addEventListener("visibilitychange", async (event) => {
+    document.addEventListener("visibilitychange", async () => {
       if (
         document.visibilityState === "visible" &&
         !isElectron &&
@@ -199,10 +188,6 @@ class Header extends React.Component<HeaderProps, HeaderState> {
     if (this.scheduledSyncTimer) {
       clearInterval(this.scheduledSyncTimer);
       this.scheduledSyncTimer = null;
-    }
-    if (this.resizeHandler) {
-      window.removeEventListener("resize", this.resizeHandler);
-      this.resizeHandler = null;
     }
     if (isElectron && this.readingFinishedHandler) {
       const ipcRenderer = window.electronAPI;

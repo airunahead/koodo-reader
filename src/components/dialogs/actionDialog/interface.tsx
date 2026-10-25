@@ -4,13 +4,13 @@ import BookModel from "../../../models/Book";
 export interface ActionDialogProps extends RouteComponentProps<any> {
   book: BookModel;
 
-  deletedBooks: BookModel[];
+
 
   currentBook: BookModel;
   left: number;
   top: number;
   mode: string;
-  isSelectBook: boolean;
+
 
   handleFetchBooks: () => void;
   handleDeleteDialog: (isShow: boolean) => void;
@@ -33,6 +33,6 @@ export interface ActionDialogProps extends RouteComponentProps<any> {
 export interface ActionDialogState {
   isShowExport: boolean;
   isShowMark: boolean;
-  isShowDetail: boolean;
+
   isExceed: boolean;
 }

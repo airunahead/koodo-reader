@@ -21,6 +21,7 @@ import {
   calculateFileMD5,
   clearComicTemp,
   getTextRules,
+  isFixedLayoutBook,
   supportedFormats,
   throttle,
   vexComfirmAsync,
@@ -594,7 +595,7 @@ class ImportLocal extends React.Component<ImportLocalProps, ImportLocalState> {
   handleKdzBook = async (
     bookName: string,
     file_content: ArrayBuffer,
-    recordPath: string,
+    _recordPath: string,
     resolve: (value: void) => void
   ) => {
     try {
@@ -771,7 +772,8 @@ class ImportLocal extends React.Component<ImportLocalProps, ImportLocalState> {
 
       if (
         ConfigService.getReaderConfig("isPrecacheBook") === "yes" &&
-        extension !== "pdf"
+        extension !== "pdf" &&
+        !isFixedLayoutBook(result)
       ) {
         let cache = await rendition.preCache(file_content);
         if (cache !== "err" || cache) {

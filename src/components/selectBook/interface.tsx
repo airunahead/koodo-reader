@@ -4,7 +4,7 @@ export interface BookListProps extends RouteComponentProps<any> {
   books: BookModel[];
 
   shelfTitle: string;
-  deletedBooks: BookModel[];
+
   searchResults: any[];
   isSelectBook: boolean;
   isSearch: boolean;
@@ -20,7 +20,7 @@ export interface BookListProps extends RouteComponentProps<any> {
 }
 export interface BookListState {
   isShowExport: boolean;
-  isOpenDelete: boolean;
-  favoriteBooks: number;
+
+
   exportSubmenu: string;
 }

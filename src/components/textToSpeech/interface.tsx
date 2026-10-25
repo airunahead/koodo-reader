@@ -11,7 +11,7 @@ export interface TextToSpeechProps {
   readerMode: string;
   speechStartText: string;
   isSpeechAutoStart: boolean;
-  handleFetchPlugins: () => void;
+
   handleSetting: (isShow: boolean) => void;
   handleSettingMode: (settingMode: string) => void;
   handleSpeechStartText: (speechStartText: string) => void;
@@ -19,7 +19,6 @@ export interface TextToSpeechProps {
   t: (title: string) => string;
 }
 export interface TextToSpeechState {
-  isSupported: boolean;
   isAudioOn: boolean;
   isPaused: boolean;
   currentIndex: number;

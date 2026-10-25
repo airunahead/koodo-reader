@@ -9,7 +9,7 @@ export interface PopupTransProps {
   isDockedRight: boolean;
   handleOpenMenu: (isOpenMenu: boolean) => void;
   handleMenuMode: (menu: string) => void;
-  handleFetchPlugins: () => void;
+
   handleSetting: (isShow: boolean) => void;
   handleSettingMode: (settingMode: string) => void;
   t: (title: string) => string;
@@ -18,8 +18,6 @@ export interface PopupTransState {
   translatedText: string;
   originalText: string;
   transService: string;
-  transTarget: string;
-  transSource: string;
   isAddNew: boolean;
   isFinishOutput: boolean;
   isAiWaiting: boolean;

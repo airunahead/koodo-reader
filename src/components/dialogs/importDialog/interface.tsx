@@ -2,11 +2,11 @@ import { RouteComponentProps } from "react-router-dom";
 
 export interface ImportDialogProps extends RouteComponentProps<any> {
   handleImportDialog: (isOpenImportDialog: boolean) => void;
-  handleTokenDialog: (isOpenTokenDialog: boolean) => void;
+
   t: (title: string) => string;
-  handleLoadingDialog: (isShowLoading: boolean) => void;
-  handleImportBookFunc: (importBookFunc: (file: any) => Promise<void>) => void;
-  handleFetchBooks: () => void;
+
+
+
   importBookFunc: (file: any) => Promise<void>;
   handleSetting: (isShow: boolean) => void;
   handleSettingMode: (settingMode: string) => void;
@@ -17,7 +17,7 @@ export interface ImportDialogProps extends RouteComponentProps<any> {
   dataSourceList: string[];
 }
 export interface ImportDialogState {
-  isBackup: string;
+
   currentDrive: string;
   currentPath: string;
   currentFileList: {

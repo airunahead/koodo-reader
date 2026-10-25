@@ -1,8 +1,6 @@
-import Book from "../../../models/Book";
-
 export interface ThemeListProps {
   t: (title: string) => string;
-  currentBook: Book;
+
   renderBookFunc: () => void;
   handleBackgroundColor: (color: string) => void;
 }
@@ -10,7 +8,6 @@ export interface ThemeListProps {
 export interface ThemeListState {
   currentBackgroundIndex: number;
   currentTextIndex: number;
-  currentPresetIndex: number;
   isShowTextPicker: boolean;
   isShowBgPicker: boolean;
   bgColorInput: string;

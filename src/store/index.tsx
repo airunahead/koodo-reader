@@ -13,7 +13,6 @@ import NoteModel from "../models/Note";
 import BookmarkModel from "../models/Bookmark";
 import HtmlBookModel from "../models/HtmlBook";
 import PluginModel from "../models/Plugin";
-import CollectionModel from "../models/Collection";
 import { HighlightValue } from "../utils/common";
 const rootReducer = combineReducers({
   book,
@@ -74,7 +73,6 @@ export type stateType = {
     renderBookFunc: () => void;
     importBookFunc: (file: any) => Promise<void>;
     cloudSyncFunc: () => Promise<void>;
-    renderNoteFunc: () => void;
   };
   backupPage: {
     isBackup: boolean;
@@ -143,7 +141,6 @@ export type stateType = {
     isCollapsed: boolean;
   };
   viewArea: {
-    selection: string;
     menuMode: string;
     isOpenMenu: boolean;
     isChangeDirection: boolean;

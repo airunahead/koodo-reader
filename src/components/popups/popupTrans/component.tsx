@@ -28,8 +28,6 @@ class PopupTrans extends React.Component<PopupTransProps, PopupTransState> {
       translatedText: "",
       originalText: "",
       transService: ConfigService.getReaderConfig("transService") || "",
-      transTarget: ConfigService.getReaderConfig("transTarget"),
-      transSource: ConfigService.getReaderConfig("transSource"),
       isAddNew: false,
       isFinishOutput: false,
       isAiWaiting: false,
@@ -127,7 +125,7 @@ class PopupTrans extends React.Component<PopupTransProps, PopupTransState> {
         .then((res: string) => {
           if (res.startsWith("https://")) {
             openExternalUrl(res, true, "trans");
-            let docs = getIframeDoc(this.props.currentBook.format);
+            let docs = getIframeDoc(this.props.currentBook);
             for (let i = 0; i < docs.length; i++) {
               let doc = docs[i];
               if (!doc) continue;
@@ -259,10 +257,7 @@ class PopupTrans extends React.Component<PopupTransProps, PopupTransState> {
       }
       let autoValue = plugin.autoValue;
       this.setState(
-        {
-          transSource: autoValue,
-          transTarget: getDefaultTransTarget(plugin.langList),
-        },
+        {},
         () => {
           ConfigService.setReaderConfig(
             "transTarget",

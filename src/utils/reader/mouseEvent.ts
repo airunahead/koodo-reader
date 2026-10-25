@@ -1,12 +1,12 @@
 import { ConfigService } from "../../assets/lib/kookit-extra-browser.min";
 import { isElectron } from "react-device-detect";
+import Book from "../../models/Book";
 import { getIframeDoc, getIframeWin } from "./docUtil";
 import {
   handleExitFullScreen,
   handleFullScreen,
   isReadingAidMode,
   sleep,
-  throttle,
 } from "../common";
 import Hammer from "hammerjs";
 import TTSUtil from "./ttsUtil";
@@ -24,8 +24,8 @@ let throttleTime =
     ? 1000
     : 100;
 
-export const getSelection = (format: string, bookKey?: string) => {
-  let docs = getIframeDoc(format, bookKey);
+export const getSelection = (book: Book) => {
+  let docs = getIframeDoc(book);
   let text = "";
   for (let i = 0; i < docs.length; i++) {
     let doc = docs[i];
@@ -51,11 +51,8 @@ export const getSelection = (format: string, bookKey?: string) => {
   return text;
 };
 
-export const getSelectionSentence = (
-  format: string,
-  bookKey?: string
-): string => {
-  let docs = getIframeDoc(format, bookKey);
+export const getSelectionSentence = (book: Book): string => {
+  let docs = getIframeDoc(book);
   for (let i = 0; i < docs.length; i++) {
     let doc = docs[i];
     if (!doc) continue;
@@ -101,7 +98,7 @@ const clickEvent = () =>
 
 export const searchInTheBook = (
   keyword: string,
-  format: string,
+  book: Book,
   isSearch: boolean
 ) => {
   let leftPanel = document.querySelector(".left-panel");
@@ -117,7 +114,7 @@ export const searchInTheBook = (
   let searchIcon = document.querySelector(".header-search-icon");
   searchIcon?.dispatchEvent(clickEvent());
   if (isSearch) {
-    searchBox.value = getSelection(format) || keyword;
+    searchBox.value = getSelection(book) || keyword;
   }
   const keyEvent: any = new KeyboardEvent("keydown", {
     bubbles: true,
@@ -165,10 +162,6 @@ export const toggleReadingPanel = (
   );
 };
 
-export const openTableOfContents = () => {
-  openReadingPanel("left");
-};
-
 const READING_PANEL_SHORTCUTS: Array<{
   shortcut: ShortcutAction;
   position: "left" | "right" | "top" | "bottom";
@@ -210,8 +203,7 @@ const arrowKeys = async (
   rendition: any,
   event: any,
   readerMode: string,
-  format: string,
-  bookKey: string
+  book: Book
 ) => {
   if (
     event.target.tagName.toLowerCase() === "textarea" ||
@@ -219,7 +211,7 @@ const arrowKeys = async (
   ) {
     return;
   }
-  const isReadingAid = isReadingAidMode(format, bookKey);
+  const isReadingAid = isReadingAidMode(book.format, book.key);
   const revertDirection =
     isRevertDirectionReading(rendition) &&
     (readerMode !== "scroll" || isReadingAid);
@@ -231,7 +223,7 @@ const arrowKeys = async (
     } else {
       await rendition.prev();
     }
-    handleShortcut(event, format, bookKey, rendition);
+    handleShortcut(event, book, rendition);
     return;
   }
   if (readerMode === "scroll" && isReadingAid) {
@@ -240,13 +232,13 @@ const arrowKeys = async (
     if (matchShortcut(event, shortcutConfig.prevPage)) {
       event.preventDefault();
       await rendition.prev();
-      handleShortcut(event, format, bookKey, rendition);
+      handleShortcut(event, book, rendition);
       return;
     }
     if (matchShortcut(event, shortcutConfig.nextPage)) {
       event.preventDefault();
       await rendition.next();
-      handleShortcut(event, format, bookKey, rendition);
+      handleShortcut(event, book, rendition);
       return;
     }
   }
@@ -257,7 +249,7 @@ const arrowKeys = async (
     event.preventDefault();
     await rendition.next();
   }
-  handleShortcut(event, format, bookKey, rendition);
+  handleShortcut(event, book, rendition);
 };
 
 const mouseChrome = async (
@@ -276,12 +268,7 @@ const mouseChrome = async (
   }
 };
 
-const handleShortcut = (
-  event: any,
-  format: string,
-  bookKey: string,
-  rendition?: any
-) => {
+const handleShortcut = (event: any, book: Book, rendition?: any) => {
   const shortcuts = getShortcutConfig();
   if (matchShortcut(event, shortcuts.bossKey)) {
     if (isElectron) {
@@ -327,7 +314,7 @@ const handleShortcut = (
   }
   if (matchShortcut(event, shortcuts.searchInBook)) {
     event.preventDefault();
-    searchInTheBook("", "", false);
+    searchInTheBook("", book, false);
   }
   for (const { shortcut, position } of READING_PANEL_SHORTCUTS) {
     if (matchShortcut(event, shortcuts[shortcut])) {
@@ -358,7 +345,7 @@ const handleShortcut = (
   }
   for (const { shortcut, optionName } of SELECTION_SHORTCUT_OPTIONS) {
     if (matchShortcut(event, shortcuts[shortcut])) {
-      if (getSelection(format, bookKey)) {
+      if (getSelection(book)) {
         event.preventDefault();
         triggerPopupOptionClick(optionName);
       }
@@ -408,18 +395,19 @@ let lastScaleTime = 0;
 export const bindHtmlEvent = (
   rendition: any,
   doc: any,
-  key: string = "",
+  book: Book,
   readerMode: string = "",
-  format: string = "",
   handleScale: (scale: string) => void,
   renderBookFunc: () => void
 ) => {
+  const key = book.key;
+  const format = book.format;
   doc.addEventListener(
     "keydown",
     async (event) => {
       if (lock) return;
       lock = true;
-      await arrowKeys(rendition, event, readerMode, format, key);
+      await arrowKeys(rendition, event, readerMode, book);
       handleLocation(key, rendition);
       setTimeout(() => (lock = false), throttleTime);
     },
@@ -501,7 +489,7 @@ export const bindHtmlEvent = (
     async (event) => {
       if (lock) return;
       lock = true;
-      await arrowKeys(rendition, event, readerMode, format, key);
+      await arrowKeys(rendition, event, readerMode, book);
       handleLocation(key, rendition);
       setTimeout(() => (lock = false), throttleTime);
     },
@@ -539,9 +527,8 @@ export const bindHtmlEvent = (
 };
 export const htmlMouseEvent = (
   rendition: any,
-  key: string,
+  book: Book,
   readerMode: string,
-  format: string,
   handleScale: (scale: string) => void,
   renderBookFunc: () => void
 ) => {
@@ -549,16 +536,15 @@ export const htmlMouseEvent = (
     let iframe = getIframeWin();
     if (!iframe) return;
     iframe?.focus();
-    let docs = getIframeDoc(format, key);
+    let docs = getIframeDoc(book);
     for (let i = 0; i < docs.length; i++) {
       let doc = docs[i];
       if (!doc) continue;
       bindHtmlEvent(
         rendition,
         doc,
-        key,
+        book,
         readerMode,
-        format,
         handleScale,
         renderBookFunc
       );
