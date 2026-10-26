@@ -1,11 +1,12 @@
-import React from "react";
+import { useTranslation } from "react-i18next";
+import { useState } from "react";
 import { Trans } from "react-i18next";
 import toast from "react-hot-toast";
 import { ConfigService } from "../../../assets/lib/kookit-extra-browser.min";
 import { isPaginatedBook } from "../../../utils/common";
 import SliderList from "../../readerSettings/sliderList";
 import SwitchRow from "../../readerSettings/switchRow";
-import { AssistReadDialogProps, AssistReadDialogState } from "./interface";
+import { useAppStore } from "../../../store/useAppStore";
 
 const readingRulerSliderConfigs = [
   {
@@ -60,42 +61,54 @@ const autoReadingSliderConfigs = [
   },
 ];
 
-class AssistReadDialog extends React.Component<
-  AssistReadDialogProps,
-  AssistReadDialogState
-> {
-  constructor(props: AssistReadDialogProps) {
-    super(props);
-    this.state = {
-      isParagraphMode:
-        ConfigService.getReaderConfig("isParagraphMode") === "yes",
-      isReadingRuler: ConfigService.getReaderConfig("isReadingRuler") === "yes",
-      isSpeedReading: ConfigService.getReaderConfig("isSpeedReading") === "yes",
-      isAutoReading: ConfigService.getReaderConfig("isAutoReading") === "yes",
-    };
-  }
+const exclusiveModeNames = [
+  "isParagraphMode",
+  "isReadingRuler",
+  "isSpeedReading",
+  "isAutoReading",
+] as const;
 
-  exclusiveModeNames = [
-    "isParagraphMode",
-    "isReadingRuler",
-    "isSpeedReading",
-    "isAutoReading",
-  ] as const;
+type ExclusiveModeName = (typeof exclusiveModeNames)[number];
 
-  handleExclusiveOff = (
-    enabledName: (typeof this.exclusiveModeNames)[number]
-  ) => {
+const AssistReadDialog = () => {
+  const currentBook = useAppStore((s) => s.book.currentBook);
+  const htmlBook = useAppStore((s) => s.reader.htmlBook);
+  const renderBookFunc = useAppStore((s) => s.book.renderBookFunc);
+  const handleAssistReadDialog = useAppStore((s) => s.handleAssistReadDialog);
+  const handleParagraphMode = useAppStore((s) => s.handleParagraphMode);
+  const handleReadingRuler = useAppStore((s) => s.handleReadingRuler);
+  const handleSpeedReading = useAppStore((s) => s.handleSpeedReading);
+  const handleAutoReading = useAppStore((s) => s.handleAutoReading);
+  const handleReaderMode = useAppStore((s) => s.handleReaderMode);
+  const { t } = useTranslation();
+  const [state, setState] = useState<Record<ExclusiveModeName, boolean>>({
+    isParagraphMode: ConfigService.getReaderConfig("isParagraphMode") === "yes",
+    isReadingRuler: ConfigService.getReaderConfig("isReadingRuler") === "yes",
+    isSpeedReading: ConfigService.getReaderConfig("isSpeedReading") === "yes",
+    isAutoReading: ConfigService.getReaderConfig("isAutoReading") === "yes",
+  });
+
+  const stopAutoScroll = () => {
+    if (!htmlBook) return;
+    const rate = parseFloat(
+      ConfigService.getReaderConfig("autoScrollRate") || "0.5"
+    );
+    htmlBook.rendition.autoScroll?.(rate, "no");
+    htmlBook.rendition.autoScrollPDF?.("no");
+  };
+
+  const handleExclusiveOff = (enabledName: ExclusiveModeName) => {
     const exclusiveHandlers: Record<
-      (typeof this.exclusiveModeNames)[number],
+      ExclusiveModeName,
       (value: boolean) => void
     > = {
-      isParagraphMode: this.props.handleParagraphMode,
-      isReadingRuler: this.props.handleReadingRuler,
-      isSpeedReading: this.props.handleSpeedReading,
-      isAutoReading: this.props.handleAutoReading,
+      isParagraphMode: handleParagraphMode,
+      isReadingRuler: handleReadingRuler,
+      isSpeedReading: handleSpeedReading,
+      isAutoReading: handleAutoReading,
     };
-    const offNames = this.exclusiveModeNames.filter(
-      (name) => name !== enabledName && this.state[name]
+    const offNames = exclusiveModeNames.filter(
+      (name) => name !== enabledName && state[name]
     );
     if (offNames.length === 0) return;
     offNames.forEach((name) => {
@@ -103,9 +116,9 @@ class AssistReadDialog extends React.Component<
       exclusiveHandlers[name](false);
     });
     if (offNames.includes("isAutoReading")) {
-      this.stopAutoScroll();
+      stopAutoScroll();
     }
-    this.setState((prevState) => {
+    setState((prevState) => {
       const nextState = { ...prevState };
       offNames.forEach((name) => {
         nextState[name] = false;
@@ -114,33 +127,24 @@ class AssistReadDialog extends React.Component<
     });
   };
 
-  stopAutoScroll = () => {
-    if (!this.props.htmlBook) return;
-    const rate = parseFloat(
-      ConfigService.getReaderConfig("autoScrollRate") || "0.5"
-    );
-    this.props.htmlBook.rendition.autoScroll?.(rate, "no");
-    this.props.htmlBook.rendition.autoScrollPDF?.("no");
-  };
-
-  handleParagraphModeToggle = () => {
-    const next = !this.state.isParagraphMode;
+  const handleParagraphModeToggle = () => {
+    const next = !state.isParagraphMode;
     if (next) {
-      this.handleExclusiveOff("isParagraphMode");
+      handleExclusiveOff("isParagraphMode");
     }
-    this.setState({ isParagraphMode: next });
+    setState((prev) => ({ ...prev, isParagraphMode: next }));
     ConfigService.setReaderConfig("isParagraphMode", next ? "yes" : "no");
-    this.props.handleParagraphMode(next);
-    toast(this.props.t("Change successful"));
+    handleParagraphMode(next);
+    toast(t("Change successful"));
     setTimeout(() => {
-      this.props.renderBookFunc();
+      renderBookFunc();
     }, 500);
   };
 
-  handleReadingRulerToggle = () => {
-    const next = !this.state.isReadingRuler;
+  const handleReadingRulerToggle = () => {
+    const next = !state.isReadingRuler;
     if (next) {
-      this.handleExclusiveOff("isReadingRuler");
+      handleExclusiveOff("isReadingRuler");
       if (!ConfigService.getReaderConfig("readingRulerLineHeight")) {
         ConfigService.setReaderConfig("readingRulerLineHeight", "3");
       }
@@ -148,119 +152,117 @@ class AssistReadDialog extends React.Component<
         ConfigService.setReaderConfig("readingRulerBackgroundOpacity", "0.6");
       }
     }
-    this.setState({ isReadingRuler: next });
+    setState((prev) => ({ ...prev, isReadingRuler: next }));
     ConfigService.setReaderConfig("isReadingRuler", next ? "yes" : "no");
-    this.props.handleReadingRuler(next);
-    toast(this.props.t("Change successful"));
+    handleReadingRuler(next);
+    toast(t("Change successful"));
     setTimeout(() => {
-      this.props.renderBookFunc();
+      renderBookFunc();
     }, 500);
   };
 
-  handleSpeedReadingToggle = () => {
-    const next = !this.state.isSpeedReading;
+  const handleSpeedReadingToggle = () => {
+    const next = !state.isSpeedReading;
     if (next) {
-      this.handleExclusiveOff("isSpeedReading");
+      handleExclusiveOff("isSpeedReading");
       if (!ConfigService.getReaderConfig("speedReadingSpeed")) {
         ConfigService.setReaderConfig("speedReadingSpeed", "300");
       }
     }
-    this.setState({ isSpeedReading: next });
+    setState((prev) => ({ ...prev, isSpeedReading: next }));
     ConfigService.setReaderConfig("isSpeedReading", next ? "yes" : "no");
-    this.props.handleSpeedReading(next);
-    toast(this.props.t("Change successful"));
+    handleSpeedReading(next);
+    toast(t("Change successful"));
     setTimeout(() => {
-      this.props.renderBookFunc();
+      renderBookFunc();
     }, 500);
   };
 
-  handleAutoReadingToggle = () => {
-    const next = !this.state.isAutoReading;
+  const handleAutoReadingToggle = () => {
+    const next = !state.isAutoReading;
     if (next) {
-      this.handleExclusiveOff("isAutoReading");
+      handleExclusiveOff("isAutoReading");
     }
-    this.setState({ isAutoReading: next });
+    setState((prev) => ({ ...prev, isAutoReading: next }));
     ConfigService.setReaderConfig("isAutoReading", next ? "yes" : "no");
-    this.props.handleAutoReading(next);
+    handleAutoReading(next);
     if (next) {
       if (!ConfigService.getReaderConfig("autoScrollRate")) {
         ConfigService.setReaderConfig("autoScrollRate", "0.5");
       }
-      if (isPaginatedBook(this.props.currentBook)) {
+      if (isPaginatedBook(currentBook)) {
         ConfigService.setReaderConfig("pdfReaderMode", "scroll");
       } else {
         ConfigService.setReaderConfig("readerMode", "scroll");
       }
-      this.props.handleReaderMode("scroll");
+      handleReaderMode("scroll");
     } else {
-      this.stopAutoScroll();
+      stopAutoScroll();
     }
-    toast(this.props.t("Change successful"));
+    toast(t("Change successful"));
     if (next) {
       setTimeout(() => {
-        this.props.renderBookFunc();
+        renderBookFunc();
       }, 500);
     }
   };
 
-  render() {
-    return (
-      <div
-        className="sort-dialog-container scale-page-dialog-container assist-read-dialog-container"
-        onMouseLeave={() => {
-          this.props.handleAssistReadDialog(false);
-        }}
-        onMouseEnter={() => {
-          this.props.handleAssistReadDialog(true);
-        }}
-        style={{
-          top: "50px",
-          width: "280px",
-          overflowY: "auto",
-          maxHeight: "calc(100vh - 80px)",
-          paddingTop: "0px",
-        }}
-      >
-        <ul className="sort-by-category">
-          <SwitchRow
-            title={<Trans>Enable auto reading</Trans>}
-            isEnabled={this.state.isAutoReading}
-            onClick={this.handleAutoReadingToggle}
-          />
-          {this.state.isAutoReading &&
-            autoReadingSliderConfigs.map((item) => (
-              <SliderList key={item.mode} {...{ item }} />
-            ))}
+  return (
+    <div
+      className="sort-dialog-container scale-page-dialog-container assist-read-dialog-container"
+      onMouseLeave={() => {
+        handleAssistReadDialog(false);
+      }}
+      onMouseEnter={() => {
+        handleAssistReadDialog(true);
+      }}
+      style={{
+        top: "50px",
+        width: "280px",
+        overflowY: "auto",
+        maxHeight: "calc(100vh - 80px)",
+        paddingTop: "0px",
+      }}
+    >
+      <ul className="sort-by-category">
+        <SwitchRow
+          title={<Trans>Enable auto reading</Trans>}
+          isEnabled={state.isAutoReading}
+          onClick={handleAutoReadingToggle}
+        />
+        {state.isAutoReading &&
+          autoReadingSliderConfigs.map((item) => (
+            <SliderList key={item.mode} {...{ item }} />
+          ))}
 
-          <SwitchRow
-            title={<Trans>Enable paragraph mode</Trans>}
-            isEnabled={this.state.isParagraphMode}
-            onClick={this.handleParagraphModeToggle}
-          />
+        <SwitchRow
+          title={<Trans>Enable paragraph mode</Trans>}
+          isEnabled={state.isParagraphMode}
+          onClick={handleParagraphModeToggle}
+        />
 
-          <SwitchRow
-            title={<Trans>Enable reading ruler</Trans>}
-            isEnabled={this.state.isReadingRuler}
-            onClick={this.handleReadingRulerToggle}
-          />
-          {this.state.isReadingRuler &&
-            readingRulerSliderConfigs.map((item) => (
-              <SliderList key={item.mode} {...{ item }} />
-            ))}
+        <SwitchRow
+          title={<Trans>Enable reading ruler</Trans>}
+          isEnabled={state.isReadingRuler}
+          onClick={handleReadingRulerToggle}
+        />
+        {state.isReadingRuler &&
+          readingRulerSliderConfigs.map((item) => (
+            <SliderList key={item.mode} {...{ item }} />
+          ))}
 
-          <SwitchRow
-            title={<Trans>Enable speed reading</Trans>}
-            isEnabled={this.state.isSpeedReading}
-            onClick={this.handleSpeedReadingToggle}
-          />
-          {this.state.isSpeedReading &&
-            speedReadingSliderConfigs.map((item) => (
-              <SliderList key={item.mode} {...{ item }} />
-            ))}
-        </ul>
-      </div>
-    );
-  }
-}
+        <SwitchRow
+          title={<Trans>Enable speed reading</Trans>}
+          isEnabled={state.isSpeedReading}
+          onClick={handleSpeedReadingToggle}
+        />
+        {state.isSpeedReading &&
+          speedReadingSliderConfigs.map((item) => (
+            <SliderList key={item.mode} {...{ item }} />
+          ))}
+      </ul>
+    </div>
+  );
+};
 
 export default AssistReadDialog;

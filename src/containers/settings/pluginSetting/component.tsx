@@ -1,8 +1,6 @@
-import React from "react";
-import { SettingInfoProps, SettingInfoState } from "./interface";
+import { useTranslation } from "react-i18next";
+import React, { useEffect, useRef, useState } from "react";
 import { Trans } from "react-i18next";
-import _ from "underscore";
-
 import toast from "react-hot-toast";
 import {
   getWebsiteLang,
@@ -28,6 +26,16 @@ import {
   verifyCustomVoicePlugin,
 } from "../../../utils/plugins/customPlugin";
 import type { PluginConfig, PluginVoice } from "../../../utils/plugins/types";
+import { useAppStore } from "../../../store/useAppStore";
+
+import type { BuiltinPluginMarketItem } from "../../../utils/plugins/types";
+
+export interface SettingInfoState {
+  isAddNew: boolean;
+  availablePlugins: BuiltinPluginMarketItem[];
+  expandedPluginKey: string | null;
+  activePluginTab: string;
+}
 
 const manualVoiceListPluginKeys = new Set([
   "ttsserver-voice-plugin",
@@ -36,29 +44,28 @@ const manualVoiceListPluginKeys = new Set([
   "coquitts-voice-plugin",
 ]);
 
-class SettingDialog extends React.Component<
-  SettingInfoProps,
-  SettingInfoState
-> {
-  private translationRef = React.createRef<HTMLDivElement>();
-  private dictionaryRef = React.createRef<HTMLDivElement>();
-  private ocrRef = React.createRef<HTMLDivElement>();
-  private voiceRef = React.createRef<HTMLDivElement>();
+const SettingDialog = () => {
+  const plugins = useAppStore((s) => s.manager.plugins);
+  const handleFetchPlugins = useAppStore((s) => s.handleFetchPlugins);
+  const { t } = useTranslation();
+  const translationRef = useRef<HTMLDivElement | null>(null);
+  const dictionaryRef = useRef<HTMLDivElement | null>(null);
+  const ocrRef = useRef<HTMLDivElement | null>(null);
+  const voiceRef = useRef<HTMLDivElement | null>(null);
 
-  constructor(props: SettingInfoProps) {
-    super(props);
-    this.state = {
-      isAddNew: false,
-      availablePlugins: [],
-      expandedPluginKey: null,
-      activePluginTab: "translation",
-    };
-  }
-  componentDidMount() {
-    this.handleGetPluginList();
-  }
-  handleGetPluginList = () => {
-    const installedPluginKeys = this.props.plugins.map((item) => item.key);
+  const [state, setState] = useState<SettingInfoState>({
+    isAddNew: false,
+    availablePlugins: [],
+    expandedPluginKey: null,
+    activePluginTab: "translation",
+  });
+
+  const mergeState = (patch: Partial<SettingInfoState>) => {
+    setState((prev) => ({ ...prev, ...patch }));
+  };
+
+  const handleGetPluginList = () => {
+    const installedPluginKeys = plugins.map((item) => item.key);
     const pluginList = getBuiltinPluginMarket(
       ConfigService.getReaderConfig("lang") || navigator.language
     ).filter((item) => {
@@ -79,44 +86,43 @@ class SettingDialog extends React.Component<
     pluginList.sort(
       (a, b) => typeOrder[a.plugin.type] - typeOrder[b.plugin.type]
     );
-    this.setState({ availablePlugins: pluginList });
+    mergeState({ availablePlugins: pluginList });
   };
-  getPluginTutorialUrl = () =>
+  const getPluginTutorialUrl = () =>
     getWebsiteUrl() + getWebsiteLang() + "/plugin";
-  handleOpenAddNew = async (scrollToTop = false) => {
+  const handleOpenAddNew = async (scrollToTop = false) => {
     if (window.electronAPI?.runtime?.windowsStore) {
       return;
     }
     const result = await vexComfirmAsync("Custom plugin security warning");
     if (!result) return;
-    this.setState({ isAddNew: true }, () => {
-      if (scrollToTop) {
-        const infoEl = document.querySelector(".setting-dialog-info");
-        if (infoEl) infoEl.scrollTop = 0;
-      }
-    });
+    mergeState({ isAddNew: true });
+    if (scrollToTop) {
+      const infoEl = document.querySelector(".setting-dialog-info");
+      if (infoEl) infoEl.scrollTop = 0;
+    }
   };
-  handleFillVoiceList = (pluginKey: string, example: PluginVoice[]) =>
+  const handleFillVoiceList = (pluginKey: string, example: PluginVoice[]) =>
     new Promise<PluginVoice[] | false>((resolve) => {
-      window.vex.dialog.buttons.YES.text = this.props.t("Confirm");
-      window.vex.dialog.buttons.NO.text = this.props.t("Cancel");
+      window.vex.dialog.buttons.YES.text = t("Confirm");
+      window.vex.dialog.buttons.NO.text = t("Cancel");
       const placeholder = JSON.stringify(example, null, 2)
         .replace(/&/g, "&amp;")
         .replace(/"/g, "&quot;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;");
       window.vex.dialog.open({
-        message: this.props.t("Paste voice list JSON"),
+        message: t("Paste voice list JSON"),
         input: `<textarea name="voiceList" placeholder="${placeholder}" style="width:100%;height:320px;resize:vertical;font-family:monospace" required></textarea>`,
         buttons: [
           window.vex.dialog.buttons.YES,
           window.vex.dialog.buttons.NO,
           {
-            text: this.props.t("Tutorial"),
+            text: t("Tutorial"),
             type: "button",
             className: "vex-dialog-button-secondary",
             click: () => {
-              openExternalUrl(this.getPluginTutorialUrl());
+              openExternalUrl(getPluginTutorialUrl());
             },
           },
         ],
@@ -152,13 +158,13 @@ class SettingDialog extends React.Component<
               }))
             );
           } catch {
-            toast.error(this.props.t("Invalid voice list JSON"));
+            toast.error(t("Invalid voice list JSON"));
             resolve(false);
           }
         },
       });
     });
-  handleFillPluginConfig = async (plugin: any, configuration: string) => {
+  const handleFillPluginConfig = async (plugin: any, configuration: string) => {
     if (!plugin || !plugin.config || typeof plugin.config !== "object") {
       return true;
     }
@@ -174,10 +180,14 @@ class SettingDialog extends React.Component<
     plugin.config = { ...config, ...(result as Record<string, any>) };
     return true;
   };
-  render() {
-    return (
+
+  useEffect(() => {
+    handleGetPluginList();
+  }, [plugins]);
+
+  return (
       <>
-        {this.state.isAddNew && (
+        {state.isAddNew && (
           <div
             className="voice-add-new-container"
             style={{
@@ -188,7 +198,7 @@ class SettingDialog extends React.Component<
           >
             <textarea
               name="url"
-              placeholder={this.props.t(
+              placeholder={t(
                 "Paste the code of the plugin here, check out document to learn how to get more plugins"
               )}
               id="voice-add-content-box"
@@ -215,7 +225,7 @@ class SettingDialog extends React.Component<
                       };
                       if (plugin.type === "voice" && !isElectron) {
                         toast.error(
-                          this.props.t(
+                          t(
                             "Only desktop version supports TTS plugin"
                           )
                         );
@@ -227,7 +237,7 @@ class SettingDialog extends React.Component<
                           !(await verifyCustomVoicePlugin(plugin))
                         ) {
                           toast.error(
-                            this.props.t("Plugin verification failed")
+                            t("Plugin verification failed")
                           );
                           return;
                         }
@@ -268,7 +278,7 @@ class SettingDialog extends React.Component<
                             }));
                           } catch {
                             toast.error(
-                              this.props.t("Failed to get TTS voice list")
+                              t("Failed to get TTS voice list")
                             );
                             return;
                           }
@@ -286,13 +296,13 @@ class SettingDialog extends React.Component<
                           !(await verifyCustomRendererPlugin(plugin))
                         ) {
                           toast.error(
-                            this.props.t("Plugin verification failed")
+                            t("Plugin verification failed")
                           );
                           return;
                         }
                       }
                       if (
-                        this.props.plugins.find(
+                        plugins.find(
                           (item) => item.key === plugin.key
                         )
                       ) {
@@ -300,18 +310,18 @@ class SettingDialog extends React.Component<
                       } else {
                         await DatabaseService.saveRecord(plugin, "plugins");
                       }
-                      this.props.handleFetchPlugins();
-                      toast.success(this.props.t("Addition successful"));
+                      handleFetchPlugins();
+                      toast.success(t("Addition successful"));
                     } catch (error) {
                       toast.error(
                         error instanceof Error
                           ? error.message
-                          : this.props.t("Plugin verification failed")
+                          : t("Plugin verification failed")
                       );
                       return;
                     }
                   }
-                  this.setState({ isAddNew: false });
+                  mergeState({ isAddNew: false });
                 }}
               >
                 <Trans>Confirm</Trans>
@@ -320,7 +330,7 @@ class SettingDialog extends React.Component<
                 <div
                   className="voice-add-cancel"
                   onClick={() => {
-                    this.setState({ isAddNew: false });
+                    mergeState({ isAddNew: false });
                   }}
                 >
                   <Trans>Cancel</Trans>
@@ -349,13 +359,13 @@ class SettingDialog extends React.Component<
             marginTop: "20px",
           }}
         >
-          <span style={{}} onClick={() => this.handleOpenAddNew(false)}>
+          <span style={{}} onClick={() => handleOpenAddNew(false)}>
             <Trans>Installed</Trans>
           </span>
         </div>
 
-        {this.props.plugins &&
-          this.props.plugins
+        {plugins &&
+          plugins
             .filter((item) => item.type !== "ai")
             .map((item) => {
               return (
@@ -374,7 +384,7 @@ class SettingDialog extends React.Component<
                       } setting-plugin-icon`}
                     ></span>
                     <span className="setting-plugin-name">
-                      {this.props.t(item.displayName)}
+                      {t(item.displayName)}
                     </span>
                   </span>
 
@@ -388,9 +398,9 @@ class SettingDialog extends React.Component<
                             item.key,
                             "plugins"
                           );
-                          this.props.handleFetchPlugins();
-                          toast.success(this.props.t("Deletion successful"));
-                          this.handleGetPluginList();
+                          handleFetchPlugins();
+                          toast.success(t("Deletion successful"));
+                          handleGetPluginList();
                         }}
                       >
                         <Trans>Delete</Trans>
@@ -408,7 +418,7 @@ class SettingDialog extends React.Component<
             marginTop: "20px",
           }}
         >
-          <span style={{}} onClick={() => this.handleOpenAddNew(false)}>
+          <span style={{}} onClick={() => handleOpenAddNew(false)}>
             <Trans>Plugin market</Trans>
           </span>
         </div>
@@ -417,23 +427,23 @@ class SettingDialog extends React.Component<
             .filter((type) => isElectron || type !== "voice")
             .map((type) => {
               const labelMap: Record<string, string> = {
-                translation: this.props.t("Translation"),
-                dictionary: this.props.t("Dictionary"),
-                ocr: this.props.t("Text recognition"),
-                voice: this.props.t("Voice"),
+                translation: t("Translation"),
+                dictionary: t("Dictionary"),
+                ocr: t("Text recognition"),
+                voice: t("Voice"),
               };
-              const refMap: Record<string, React.RefObject<HTMLDivElement>> = {
-                translation: this.translationRef,
-                dictionary: this.dictionaryRef,
-                ocr: this.ocrRef,
-                voice: this.voiceRef,
+              const refMap: Record<string, React.RefObject<HTMLDivElement | null>> = {
+                translation: translationRef,
+                dictionary: dictionaryRef,
+                ocr: ocrRef,
+                voice: voiceRef,
               };
               return (
                 <div
                   key={type}
-                  className={`plugin-tab-item${this.state.activePluginTab === type ? " plugin-tab-item-active" : ""}`}
+                  className={`plugin-tab-item${state.activePluginTab === type ? " plugin-tab-item-active" : ""}`}
                   onClick={() => {
-                    this.setState({ activePluginTab: type });
+                    mergeState({ activePluginTab: type });
                     const ref = refMap[type].current;
                     if (ref) {
                       const scrollContainer = document.querySelector(
@@ -455,25 +465,25 @@ class SettingDialog extends React.Component<
               );
             })}
         </div>
-        {this.state.availablePlugins &&
-          this.state.availablePlugins.map((item, index: number) => {
+        {state.availablePlugins &&
+          state.availablePlugins.map((item, index: number) => {
             const isExpanded =
-              this.state.expandedPluginKey === item.plugin.identifier;
+              state.expandedPluginKey === item.plugin.identifier;
             const type = item.plugin.type;
             const prevType =
               index > 0
-                ? this.state.availablePlugins[index - 1].plugin.type
+                ? state.availablePlugins[index - 1].plugin.type
                 : null;
             const isFirstOfType = type !== prevType;
             const sectionRef =
               type === "translation"
-                ? this.translationRef
+                ? translationRef
                 : type === "dictionary"
-                  ? this.dictionaryRef
+                  ? dictionaryRef
                   : type === "ocr"
-                    ? this.ocrRef
+                    ? ocrRef
                     : type === "voice"
-                      ? this.voiceRef
+                      ? voiceRef
                       : null;
             return (
               <div key={item.plugin.identifier}>
@@ -495,7 +505,7 @@ class SettingDialog extends React.Component<
                       } setting-plugin-icon`}
                     ></span>
                     <span className="setting-plugin-name">
-                      {this.props.t(item.name)}
+                      {t(item.name)}
                     </span>
                   </span>
                   <span
@@ -508,7 +518,7 @@ class SettingDialog extends React.Component<
                     <span
                       style={{ cursor: "pointer" }}
                       onClick={() => {
-                        this.setState({
+                        mergeState({
                           expandedPluginKey: isExpanded
                             ? null
                             : item.plugin.identifier,
@@ -526,7 +536,7 @@ class SettingDialog extends React.Component<
 
                         if (plugin.type === "voice" && !isElectron) {
                           toast.error(
-                            this.props.t(
+                            t(
                               "Only desktop version supports TTS plugin"
                             )
                           );
@@ -534,7 +544,7 @@ class SettingDialog extends React.Component<
                         }
 
                         if (
-                          !(await this.handleFillPluginConfig(
+                          !(await handleFillPluginConfig(
                             plugin,
                             item.configuration
                           ))
@@ -544,7 +554,7 @@ class SettingDialog extends React.Component<
                         let voiceList = plugin.voiceList;
                         if (manualVoiceListPluginKeys.has(pluginKey)) {
                           const configuredVoiceList =
-                            await this.handleFillVoiceList(
+                            await handleFillVoiceList(
                               pluginKey,
                               voiceList
                             );
@@ -569,17 +579,17 @@ class SettingDialog extends React.Component<
                               error
                             );
                             toast.error(
-                              this.props.t("Failed to get TTS voice list")
+                              t("Failed to get TTS voice list")
                             );
                             return;
                           }
                         }
                         if (
-                          this.props.plugins.find(
+                          plugins.find(
                             (installed) => installed.key === pluginKey
                           )
                         ) {
-                          toast.error(this.props.t("Plugin already installed"));
+                          toast.error(t("Plugin already installed"));
                           return;
                         }
                         const definition =
@@ -593,9 +603,9 @@ class SettingDialog extends React.Component<
                           ),
                           "plugins"
                         );
-                        this.props.handleFetchPlugins();
-                        toast.success(this.props.t("Addition successful"));
-                        this.handleGetPluginList();
+                        handleFetchPlugins();
+                        toast.success(t("Addition successful"));
+                        handleGetPluginList();
                       }}
                     >
                       <Trans>Install</Trans>
@@ -668,7 +678,7 @@ class SettingDialog extends React.Component<
             <span
               style={{ textDecoration: "underline", marginRight: "20px" }}
               onClick={() => {
-                openExternalUrl(this.getPluginTutorialUrl());
+                openExternalUrl(getPluginTutorialUrl());
               }}
             >
               <Trans>Visit online version</Trans>
@@ -695,7 +705,7 @@ class SettingDialog extends React.Component<
             <span
               style={{ marginLeft: "20px", fontWeight: "bold" }}
               onClick={async () => {
-                this.handleOpenAddNew(true);
+                handleOpenAddNew(true);
               }}
             >
               <Trans>Add custom plugin</Trans>
@@ -703,8 +713,7 @@ class SettingDialog extends React.Component<
           </div>
         )}
       </>
-    );
-  }
-}
+  );
+};
 
 export default SettingDialog;
