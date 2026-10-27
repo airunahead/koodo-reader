@@ -1,6 +1,6 @@
 import { useLatest } from "../../utils/hooks/useLatest";
 import { useTranslation } from "react-i18next";
-﻿import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import SettingPanel from "../../containers/panels/settingPanel";
 import NavigationPanel from "../../containers/panels/navigationPanel";
 import OperationPanel from "../../containers/panels/operationPanel";
@@ -33,7 +33,10 @@ import SupportDialog from "../../components/dialogs/supportDialog";
 import WindowControls from "../../components/windowControls";
 import { READING_PANEL_TOGGLE_EVENT } from "../../utils/reader/mouseEvent";
 import { isPaginatedBook, isReadingRawPDF, throttle } from "../../utils/common";
+import { getOuterDoc } from "../../utils/reader/docUtil";
 import { useAppStore } from "../../store/useAppStore";
+
+const QUICK_BUTTON_EDGE_DISTANCE = 60;
 
 export interface ReaderState {
   isOpenRightPanel: boolean;
@@ -180,6 +183,14 @@ const Reader = () => {
   const hideQuickButtonsTimerRef = useRef<NodeJS.Timeout | null>(null);
   const dialogAnchorIconRef = useRef<HTMLElement | null>(null);
   const didMountRef = useRef(false);
+  useEffect(() => {
+    const rendition = htmlBook?.rendition;
+    if (typeof rendition?.applyAnnotationConfig !== "function") return;
+    rendition.applyAnnotationConfig({
+      isDrawing: isAnnotationOpen ? "yes" : "no",
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAnnotationOpen, htmlBook]);
   const readingTimeUtilRef = useRef<InstanceType<
     typeof ReadingTimeUtil
   > | null>(null);
@@ -343,12 +354,15 @@ const Reader = () => {
     propsRef.current.handlePdfCropDialog(false);
     propsRef.current.handleStudyLangDialog(false);
     propsRef.current.handleAssistReadDialog(false);
+    propsRef.current.handleSpeechDialog(false);
   };
   const updateSettingDialogPosition = () => {
     const anchor = document.querySelector<HTMLElement>(
       ".reader-setting-dialog-anchor"
     );
-    const dialog = anchor?.querySelector<HTMLElement>(".sort-dialog-container");
+    const dialog = Array.from(
+      anchor?.querySelectorAll<HTMLElement>(".sort-dialog-container") || []
+    ).find((item) => item.offsetParent !== null && item.offsetWidth > 0);
     if (!anchor || !dialog) return;
     const icon = dialogAnchorIconRef.current;
     if (!icon || !icon.isConnected) return;
@@ -375,7 +389,15 @@ const Reader = () => {
       "--reader-dialog-anchor-x",
       `${iconCenter}px`
     );
-    anchor.style.left = `${left}px`;
+    if (!anchor.dataset.positioned) {
+      anchor.style.transition = "none";
+      anchor.style.left = `${left}px`;
+      void anchor.offsetWidth;
+      anchor.style.transition = "";
+      anchor.dataset.positioned = "true";
+    } else {
+      anchor.style.left = `${left}px`;
+    }
   };
   const handleDialogButtonHover = (
     handleDialog: (isOpen: boolean) => void,
@@ -415,9 +437,14 @@ const Reader = () => {
     }
     hideQuickButtonsTimerRef.current = setTimeout(() => {
       hideQuickButtonsTimerRef.current = null;
-      updateState({ isNearEdge: false });
+      if (stateRef.current.isNearEdge) {
+        updateState({ isNearEdge: false });
+      }
     }, 200);
   };
+  const isWithinEdgeZone = (pageY: number) =>
+    pageY <= QUICK_BUTTON_EDGE_DISTANCE ||
+    window.innerHeight - pageY <= QUICK_BUTTON_EDGE_DISTANCE;
   const handleLocation = () => {
     let position = propsRef.current.htmlBook.rendition.getPosition();
 
@@ -505,11 +532,16 @@ const Reader = () => {
         ConfigService.setReaderConfig("isFinishWebReading", "yes");
       }
     });
-    const handleMouseMove = () => {
+    const handleMouseMove = (e: MouseEvent) => {
       isMouseMoving = true;
       setTimeout(() => {
         isMouseMoving = false;
       }, 100);
+      if (isWithinEdgeZone(e.clientY)) {
+        showQuickButtons();
+      } else {
+        hideQuickButtons();
+      }
     };
     const throttledMouseMove = throttle(handleMouseMove, 100);
     window.addEventListener("mousemove", throttledMouseMove);
@@ -556,6 +588,46 @@ const Reader = () => {
   }, []);
 
   useEffect(() => {
+    if (!htmlBook) return;
+    const attachedDocs = new WeakSet<Document>();
+    const getPageClientY = (doc: Document, clientY: number) => {
+      let y = clientY;
+      let win: Window | null = doc.defaultView;
+      while (win && win.frameElement) {
+        y += win.frameElement.getBoundingClientRect().top;
+        win = win.parent;
+      }
+      return y;
+    };
+    const createEdgeMoveHandler = (doc: Document) =>
+      throttle((e: MouseEvent) => {
+        if (isWithinEdgeZone(getPageClientY(doc, e.clientY))) {
+          showQuickButtons();
+        } else {
+          hideQuickButtons();
+        }
+      }, 100);
+    const attachToDoc = (doc: Document | null) => {
+      if (!doc || attachedDocs.has(doc)) return;
+      attachedDocs.add(doc);
+      doc.addEventListener("mousemove", createEdgeMoveHandler(doc));
+    };
+    const collectDocs = () => {
+      const outerDoc = getOuterDoc();
+      attachToDoc(outerDoc);
+      if (!outerDoc) return;
+      outerDoc.querySelectorAll("iframe").forEach((iframe) => {
+        attachToDoc((iframe as HTMLIFrameElement).contentDocument);
+      });
+    };
+    collectDocs();
+    const attachTimer = setInterval(collectDocs, 800);
+    return () => {
+      clearInterval(attachTimer);
+    };
+  }, [htmlBook]);
+
+  useEffect(() => {
     if (!didMountRef.current) {
       didMountRef.current = true;
       return;
@@ -583,7 +655,9 @@ const Reader = () => {
       state.isOpenRightPanel,
   };
   return (
-    <div className="viewer">
+    <div
+      className={"viewer" + (state.isNearEdge ? " quick-buttons-shown" : "")}
+    >
       <Tooltip id="my-tooltip" style={{ zIndex: 25 }} />
       {isSeparateElectronWindow && (
         <div className="reader-window-drag-region" />
@@ -654,63 +728,6 @@ const Reader = () => {
         >
           <span className="icon-dropdown next-chapter-single"></span>
         </div>
-        <div
-          className="next-chapter-single-container"
-          onClick={async () => {
-            handleSpeechDialog(!isSpeechOpen);
-          }}
-          style={{ position: "static", transform: "rotate(0deg)" }}
-        >
-          <span
-            style={
-              isSpeechOpen ? { fontWeight: "bold", marginTop: "4px" } : {}
-            }
-            className={`icon-${isSpeechOpen ? "close" : "earphone"} next-chapter-single`}
-          ></span>
-        </div>
-        {ConfigService.getReaderConfig("isDisableAI") !== "yes" && (
-          <div
-            className="next-chapter-single-container"
-            onClick={async () => {
-              handleMenuMode("assistant");
-              handleOriginalText(
-                await htmlBook.rendition.chapterText()
-              );
-              handleOpenMenu(true);
-            }}
-            style={{
-              position: "static",
-              transform: "rotate(0deg)",
-              fontWeight: "bold",
-              fontSize: "17px",
-            }}
-          >
-            AI
-          </div>
-        )}
-        {currentBook &&
-          isReadingRawPDF(currentBook) &&
-          currentBook.description.indexOf("scanned") > -1 && (
-            <div
-              className="next-chapter-single-container"
-              onClick={() => {
-                htmlBook.rendition.applyAnnotationConfig({
-                  isDrawing: isAnnotationOpen ? "no" : "yes",
-                });
-                handleAnnotationDialog(!isAnnotationOpen);
-              }}
-              style={{ position: "static", transform: "rotate(0deg)" }}
-            >
-              <span
-                style={
-                  isAnnotationOpen
-                    ? { fontWeight: "bold", marginTop: "4px" }
-                    : { fontSize: "17px" }
-                }
-                className={`icon-${isAnnotationOpen ? "close" : "edit"} next-chapter-single`}
-              ></span>
-            </div>
-          )}
       </div>
 
       <div
@@ -760,7 +777,7 @@ const Reader = () => {
               >
                 <span
                   className="icon-trans reader-setting-icon"
-                  style={{ fontSize: 23 }}
+                  style={{ fontSize: 19 }}
                 ></span>
               </div>
               <div
@@ -771,8 +788,8 @@ const Reader = () => {
                 )}
               >
                 <span
-                  className="icon-pencil-ruler reader-setting-icon"
-                  style={{ fontSize: 21 }}
+                  className="icon-light-bulb reader-setting-icon"
+                  style={{ fontSize: 20 }}
                 ></span>
               </div>
             </>
@@ -794,27 +811,26 @@ const Reader = () => {
               >
                 <span
                   className="icon-zoom-in reader-setting-icon"
-                  style={{ fontSize: 23 }}
+                  style={{ fontSize: 20 }}
                 ></span>
               </div>
             </div>
           )}
 
-          {currentBook.format === "PDF" &&
-            readerMode === "scroll" && (
-              <div
-                className="reader-setting-icon-container"
-                {...handleDialogButtonHover(
-                  handlePdfCropDialog,
-                  ".pdf-crop-dialog-container"
-                )}
-              >
-                <span
-                  className="icon-crop reader-setting-icon"
-                  style={{ fontSize: 24 }}
-                ></span>
-              </div>
-            )}
+          {currentBook.format === "PDF" && readerMode === "scroll" && (
+            <div
+              className="reader-setting-icon-container"
+              {...handleDialogButtonHover(
+                handlePdfCropDialog,
+                ".pdf-crop-dialog-container"
+              )}
+            >
+              <span
+                className="icon-crop reader-setting-icon"
+                style={{ fontSize: 20 }}
+              ></span>
+            </div>
+          )}
 
           {currentBook.format === "PDF" && (
             <div
@@ -826,7 +842,59 @@ const Reader = () => {
             >
               <span
                 className="icon-convert-text reader-setting-icon"
-                style={{ fontSize: 26 }}
+                style={{ fontSize: 22 }}
+              ></span>
+            </div>
+          )}
+          <div
+            className="reader-setting-icon-container"
+            {...handleDialogButtonHover(
+              handleSpeechDialog,
+              ".speech-dialog-container"
+            )}
+          >
+            <span
+              className={`icon-earphone-line reader-setting-icon`}
+              style={{ fontSize: 20 }}
+            ></span>
+          </div>
+
+          {currentBook &&
+            isReadingRawPDF(currentBook) &&
+            currentBook.description.indexOf("scanned") > -1 && (
+              <div
+                className="reader-setting-icon-container"
+                aria-label={t("Annotation")}
+                data-tooltip-id="my-tooltip"
+                data-tooltip-content={t("Annotation")}
+                onClick={() => {
+                  if (isAnnotationOpen) return;
+                  dialogAnchorIconRef.current = null;
+                  closeSettingDialogs();
+                  handleAnnotationDialog(true);
+                }}
+              >
+                <span
+                  className={`icon-pen-line reader-setting-icon`}
+                  style={{ fontSize: 20 }}
+                ></span>
+              </div>
+            )}
+          {ConfigService.getReaderConfig("isDisableAI") !== "yes" && (
+            <div
+              className="reader-setting-icon-container"
+              aria-label={t("Reading Assistant")}
+              data-tooltip-id="my-tooltip"
+              data-tooltip-content={t("Reading Assistant")}
+              onClick={async () => {
+                handleMenuMode("assistant");
+                handleOriginalText(await htmlBook.rendition.chapterText());
+                handleOpenMenu(true);
+              }}
+            >
+              <span
+                className={`icon-star-line reader-setting-icon`}
+                style={{ fontSize: 20 }}
               ></span>
             </div>
           )}
@@ -844,7 +912,7 @@ const Reader = () => {
           >
             <span
               className="icon-grid reader-setting-icon"
-              style={{ fontSize: 20 }}
+              style={{ fontSize: 16 }}
             ></span>
           </div>
           {showCustomWindowControls && <WindowControls t={t} />}
@@ -905,19 +973,11 @@ const Reader = () => {
             ? {
                 opacity: 0.5,
                 marginLeft:
-                  isNavLocked &&
-                  !isSettingLocked &&
-                  !isDockedRight
-                    ? 150
-                    : 0,
+                  isNavLocked && !isSettingLocked && !isDockedRight ? 150 : 0,
               }
             : {
                 marginLeft:
-                  isNavLocked &&
-                  !isSettingLocked &&
-                  !isDockedRight
-                    ? 150
-                    : 0,
+                  isNavLocked && !isSettingLocked && !isDockedRight ? 150 : 0,
               }
         }
         onMouseLeave={() => handleEdgeMouseLeave("top")}
@@ -939,19 +999,11 @@ const Reader = () => {
             ? {
                 opacity: 0.5,
                 marginLeft:
-                  isNavLocked &&
-                  !isSettingLocked &&
-                  !isDockedRight
-                    ? 150
-                    : 0,
+                  isNavLocked && !isSettingLocked && !isDockedRight ? 150 : 0,
               }
             : {
                 marginLeft:
-                  isNavLocked &&
-                  !isSettingLocked &&
-                  !isDockedRight
-                    ? 150
-                    : 0,
+                  isNavLocked && !isSettingLocked && !isDockedRight ? 150 : 0,
               }
         }
       >
@@ -1012,8 +1064,7 @@ const Reader = () => {
                 marginLeft:
                   isNavLocked && !isSettingLocked
                     ? 150
-                    : !isNavLocked &&
-                        (isSettingLocked || isDockedRight)
+                    : !isNavLocked && (isSettingLocked || isDockedRight)
                       ? -150
                       : 0,
               }
@@ -1022,8 +1073,7 @@ const Reader = () => {
                 marginLeft:
                   isNavLocked && !isSettingLocked
                     ? 150
-                    : !isNavLocked &&
-                        (isSettingLocked || isDockedRight)
+                    : !isNavLocked && (isSettingLocked || isDockedRight)
                       ? -150
                       : 0,
               }
@@ -1045,8 +1095,7 @@ const Reader = () => {
                 marginLeft:
                   isNavLocked && !isSettingLocked
                     ? 150
-                    : !isNavLocked &&
-                        (isSettingLocked || isDockedRight)
+                    : !isNavLocked && (isSettingLocked || isDockedRight)
                       ? -150
                       : 0,
               }
@@ -1055,8 +1104,7 @@ const Reader = () => {
                 marginLeft:
                   isNavLocked && !isSettingLocked
                     ? 150
-                    : !isNavLocked &&
-                        (isSettingLocked || isDockedRight)
+                    : !isNavLocked && (isSettingLocked || isDockedRight)
                       ? -150
                       : 0,
               }
@@ -1072,12 +1120,12 @@ const Reader = () => {
       </div>
 
       {currentBook.key && <Viewer {...(renditionProps as any)} />}
-      {((readerMode === "scroll" || readerMode === "single") &&
-        isScaleOpen) ||
+      {((readerMode === "scroll" || readerMode === "single") && isScaleOpen) ||
       isConvertOpen ||
       isPdfCropOpen ||
       isStudyLangOpen ||
-      isAssistReadOpen ? (
+      isAssistReadOpen ||
+      isSpeechOpen ? (
         <div className="reader-setting-dialog-anchor">
           {(readerMode === "scroll" || readerMode === "single") &&
             isScaleOpen && <ScalePageDialog />}
@@ -1085,8 +1133,12 @@ const Reader = () => {
           {isPdfCropOpen && <PdfCropDialog />}
           {isStudyLangOpen && <StudyLangDialog />}
           {isAssistReadOpen && <AssistReadDialog />}
+          <div style={{ display: isSpeechOpen ? "block" : "none" }}>
+            <SpeechDialog />
+          </div>
         </div>
       ) : null}
+      {isAnnotationOpen && <AnnotationDialog />}
       <SupportDialog />
       {isOpenPopupOptionDialog && (
         <>
@@ -1094,23 +1146,8 @@ const Reader = () => {
           <div className="drag-background"></div>
         </>
       )}
-      {
-        <div
-          style={
-            isSpeechOpen
-              ? {}
-              : {
-                  display: "none",
-                }
-          }
-        >
-          <SpeechDialog />
-        </div>
-      }
-      {isAnnotationOpen && <AnnotationDialog />}
     </div>
   );
 };
 
 export default Reader;
-
