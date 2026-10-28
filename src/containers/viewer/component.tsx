@@ -54,6 +54,7 @@ import { parseWithSystemOCR } from "../../utils/request/common";
 import { isElectron } from "react-device-detect";
 import axios from "axios";
 import { getBuiltinOcr } from "../../utils/plugins/rendererRegistry";
+import { getBuiltinEngineOcrWorker } from "../../utils/reader/builtinOcrUtil";
 import { resolveStoredPlugin } from "../../utils/plugins/records";
 import type { PluginConfig } from "../../utils/plugins/types";
 import { useAppStore } from "../../store/useAppStore";
@@ -330,15 +331,26 @@ const Viewer = (props: ViewerProps) => {
     // 缓存 key 需要区分不同 OCR 插件，而渲染引擎统一用 "plugin-ocr"，两者分开维护
     let ocrCacheEngine = rawOcrEngine;
     let ocrLang = getDefaultOcrLang(rawOcrEngine, propsRef.current.currentBook);
+    const serverRegion =
+      getServerRegion() === "china" && propsRef.current.isAuthed
+        ? "china"
+        : "global";
     let externalWorker: {
       recognize: (input: string) => Promise<unknown>;
     } = {
       recognize:
         rawOcrEngine === "system-ocr"
           ? parseWithSystemOCR
-          : ConfigService.getReaderConfig(ocrLangKey) === "accurate"
-            ? getOcrResultV2
-            : getOcrResult,
+          : rawOcrEngine === "tesseract" || rawOcrEngine === "paddle"
+            ? getBuiltinEngineOcrWorker(
+                rawOcrEngine,
+                ocrLang,
+                serverRegion,
+                isElectron
+              ).recognize
+            : ConfigService.getReaderConfig(ocrLangKey) === "accurate"
+              ? getOcrResultV2
+              : getOcrResult,
     };
 
     const builtinOcr = getBuiltinOcr(rawOcrEngine);
@@ -352,15 +364,9 @@ const Viewer = (props: ViewerProps) => {
         if (ocrLang) {
           pluginConfig.language = ocrLang;
         }
-        let ocrQueue: Promise<unknown> = Promise.resolve();
         externalWorker = {
-          recognize: (imageBase64: string) => {
-            const task = ocrQueue.then(() =>
-              builtinOcr(imageBase64, axios, pluginConfig)
-            );
-            ocrQueue = task.catch(() => undefined);
-            return task;
-          },
+          recognize: (imageBase64: string) =>
+            builtinOcr(imageBase64, axios, pluginConfig),
         };
         ocrEngine = "plugin-ocr";
       } else {
@@ -371,12 +377,37 @@ const Viewer = (props: ViewerProps) => {
           recognize:
             ocrEngine === "system-ocr"
               ? parseWithSystemOCR
-              : ConfigService.getReaderConfig(ocrLangKey) === "accurate"
-                ? getOcrResultV2
-                : getOcrResult,
+              : ocrEngine === "tesseract" || ocrEngine === "paddle"
+                ? getBuiltinEngineOcrWorker(
+                    ocrEngine,
+                    ocrLang,
+                    serverRegion,
+                    isElectron
+                  ).recognize
+                : ConfigService.getReaderConfig(ocrLangKey) === "accurate"
+                  ? getOcrResultV2
+                  : getOcrResult,
         };
       }
     }
+    // kookit 侧在 OCR 缓存命中间跳时无法保证 externalWorker 串行调用，
+    // 而引擎（onnx worker / tesseract worker / 系统进程）均非并发安全，
+    // 统一在宿主侧排队，确保任意时刻只有一个识别任务在执行
+    let ocrQueue: Promise<unknown> = Promise.resolve();
+    const rawOcrRecognize = externalWorker.recognize;
+    externalWorker.recognize = (imageBase64: string) => {
+      const task = ocrQueue.then(() => rawOcrRecognize(imageBase64));
+      ocrQueue = task.catch(() => undefined);
+      return task;
+    };
+    console.log(
+      "ocrEngine12332434",
+      ocrEngine,
+      "ocrLang",
+      ocrLang,
+      "serverRegion",
+      serverRegion
+    );
     let rendition = BookHelper.getRendition(
       result,
       {
@@ -443,10 +474,7 @@ const Viewer = (props: ViewerProps) => {
         ocrLang,
         externalWorker,
         ocrEngine,
-        serverRegion:
-          getServerRegion() === "china" && propsRef.current.isAuthed
-            ? "china"
-            : "global",
+        serverRegion,
         paraSpacingValue:
           ConfigService.getReaderConfig("paraSpacingValue") || "1.5",
         titleSizeValue:
@@ -881,8 +909,7 @@ const Viewer = (props: ViewerProps) => {
   });
 
   let isReadingAid =
-    !isReadingRawPDF(currentBook) &&
-    (isParagraphMode || isSpeedReading);
+    !isReadingRawPDF(currentBook) && (isParagraphMode || isSpeedReading);
   return (
     <>
       {htmlBook && !isReadingAid ? (
@@ -957,9 +984,7 @@ const Viewer = (props: ViewerProps) => {
       {isHideBackground ||
       textOrientation === "vertical" ||
       isShowPageBorder ||
-      ((isParagraphMode ||
-        isReadingRuler ||
-        isSpeedReading) &&
+      ((isParagraphMode || isReadingRuler || isSpeedReading) &&
         !isReadingRawPDF(currentBook)) ||
       isMergeWord ? null : currentBook.key ? (
         <Background />

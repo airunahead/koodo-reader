@@ -88,6 +88,7 @@ const WindowControls = (props: WindowControlsProps) => {
           }`}
         />
       </button>
+
       <button
         type="button"
         className="reader-window-control reader-window-control-close"
