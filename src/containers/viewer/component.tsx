@@ -461,6 +461,7 @@ const Viewer = (props: ViewerProps) => {
           ConfigService.getReaderConfig("readingRulerBackgroundOpacity") ||
             "0.6"
         ),
+        pageGap: ConfigService.getReaderConfig("pageGap"),
         isEnableKoReaderSync:
           ConfigService.getReaderConfig("isEnableKoReaderSync") === "yes",
         password: getPdfPassword(propsRef.current.currentBook),
@@ -797,7 +798,11 @@ const Viewer = (props: ViewerProps) => {
           let chapterDocIndex = id ? parseInt(id.split("-").reverse()[0]) : 0;
           updateState({ chapterDocIndex });
         }
-        if (document.location.href.indexOf("localhost") === -1) {
+        if (
+          document.location.href.indexOf("localhost") === -1 &&
+          document.location.href.indexOf("file://") === -1 &&
+          document.location.href.indexOf("127.0.0.1") === -1
+        ) {
           event.preventDefault();
         }
 

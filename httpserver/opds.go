@@ -159,36 +159,21 @@ func queryBook(db *sql.DB, key string) (*opdsBook, error) {
 
 // ── Cover file detection ──────────────────────────────────────────────────────
 
-var imageExts = []string{".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
-
-// findCoverFile finds the cover image for a given book key.
-// It first checks the cover field (e.g. "1767196800000.jpg"), then falls back
-// to scanning the cover directory for any image with the matching stem.
-func findCoverFile(key, coverField string) (string, string) {
+// findCoverFile scans the cover directory and returns the first file whose
+// name starts with the given book key (mirrors the client-side lookup).
+func findCoverFile(key string) (string, string) {
 	coverDir := filepath.Join(uploadDir, "cover")
 
-	// Try the explicit cover field first
-	if coverField != "" {
-		candidate := filepath.Join(coverDir, coverField)
-		if _, err := os.Stat(candidate); err == nil {
-			ext := strings.ToLower(filepath.Ext(coverField))
-			return candidate, ext
-		}
-		// Maybe cover field is just the key, try composing
-		for _, ext := range imageExts {
-			candidate = filepath.Join(coverDir, key+ext)
-			if _, err := os.Stat(candidate); err == nil {
-				return candidate, ext
-			}
-		}
+	entries, err := os.ReadDir(coverDir)
+	if err != nil {
+		return "", ""
 	}
-
-	// Scan for key.* in cover directory
-	for _, ext := range imageExts {
-		candidate := filepath.Join(coverDir, key+ext)
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate, ext
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasPrefix(name, key) {
+			continue
 		}
+		return filepath.Join(coverDir, name), strings.ToLower(filepath.Ext(name))
 	}
 	return "", ""
 }
@@ -415,7 +400,7 @@ func handleOPDSCover(w http.ResponseWriter, r *http.Request, key string) {
 		return
 	}
 
-	coverPath, ext := findCoverFile(b.Key, b.Cover)
+	coverPath, ext := findCoverFile(b.Key)
 	if coverPath == "" {
 		http.Error(w, "Cover not found", http.StatusNotFound)
 		return
@@ -448,7 +433,11 @@ func handleOPDSDownload(w http.ResponseWriter, r *http.Request, key string) {
 	}
 
 	format := strings.ToLower(b.Format)
-	bookPath := filepath.Join(uploadDir, "book", b.Key+"."+format)
+	bookPath, err := resolveSafePath("book", b.Key+"."+format)
+	if err != nil {
+		http.Error(w, "Book file not found", http.StatusNotFound)
+		return
+	}
 	if _, err := os.Stat(bookPath); os.IsNotExist(err) {
 		http.Error(w, "Book file not found", http.StatusNotFound)
 		return
@@ -535,7 +524,7 @@ func buildEntry(b opdsBook, base string) atomEntry {
 	}
 
 	// Cover image links
-	coverPath, ext := findCoverFile(b.Key, b.Cover)
+	coverPath, ext := findCoverFile(b.Key)
 	if coverPath != "" {
 		mime := coverMime(ext)
 		entry.Links = append(entry.Links,
